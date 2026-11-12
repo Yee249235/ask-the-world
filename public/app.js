@@ -117,6 +117,40 @@ function openMoveSheet(id) {
   };
 }
 
+// 改分类名字（长按分类标签，或在「管理分类」里点 ✎）
+function openCatSheet(id) {
+  const c = catOf(id);
+  if (!c) return;
+  const bg = document.createElement("div");
+  bg.className = "sheet-bg";
+  bg.innerHTML = `<form class="sheet move-sheet" role="dialog" aria-label="修改分类">
+    <div class="sheet-head"><b>修改分类</b><button type="button" class="btn small ghost" data-x>取消</button></div>
+    <div class="bar"><input class="input emo" name="emoji" value="${esc(c.emoji)}" maxlength="4" aria-label="emoji" style="width:64px;text-align:center;font-size:22px" />
+      <input class="input" name="name" value="${esc(c.name)}" maxlength="12" style="flex:1" aria-label="分类名字" /></div>
+    ${emojiPicker("emoji", c.emoji)}
+    <div class="bar space" style="margin-top:12px"><a href="#/cats" class="muted" style="font-size:13px" data-x>管理全部分类</a>
+      <button class="btn primary">保存</button></div>
+  </form>`;
+  document.body.appendChild(bg);
+  const f = $("form", bg);
+  f.name.focus(); f.name.select();
+  const close = () => bg.remove();
+  bg.onclick = (e) => {
+    if (e.target === bg || e.target.closest("[data-x]")) return close();
+    const em = e.target.closest("[data-emo]");
+    if (em) { f.emoji.value = em.dataset.emo; $$("[data-emo]", bg).forEach((x) => x.classList.toggle("on", x === em)); }
+  };
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const body = { name: f.name.value.trim(), emoji: f.emoji.value.trim() || c.emoji };
+    if (!body.name) return f.name.focus();
+    try { Object.assign(c, await api(`categories/${id}`, { method: "PATCH", body })); toast("分类已修改"); }
+    catch (err) { toast(err.message); }
+    close();
+    keepScroll(render);
+  };
+}
+
 // 长按（手机）或右键（电脑）一张卡片
 function bindLongPress(el, fn) {
   let timer = null, sx = 0, sy = 0;
@@ -219,7 +253,7 @@ function captureBox({ topicId = null, placeholder = "冒出一个问题？先记
   return `
   <form class="capture" data-topic="${topicId || ""}">
     <textarea name="text" rows="2" placeholder="${placeholder}" aria-label="新问题"></textarea>
-    <input class="ctx" name="context" placeholder="＋ 当时的场景（可不填）：在哪、因为什么想到的" aria-label="场景" />
+    <input class="ctx" name="context" placeholder="当时的场景（非必填）" aria-label="场景" />
     ${pick}
     <div class="row">
       <span class="hint"></span>
@@ -593,7 +627,7 @@ function sheetHTML(q) {
           ${S.topics.map((t) => `<option value="${t.id}" ${t.id === q.topic_id ? "selected" : ""}>${t.emoji} ${esc(t.name)}</option>`).join("")}</select></div>
       </div>
       <div class="field"><label class="label" for="sh-ctx">当时的场景</label>
-        <input class="input" id="sh-ctx" value="${esc(q.context)}" placeholder="在哪、因为什么想到的" /></div>
+        <input class="input" id="sh-ctx" value="${esc(q.context)}" placeholder="非必填" /></div>
     </details>
   </div>`;
 }
@@ -1106,6 +1140,11 @@ function bindCommon() {
     f.onsubmit = (e) => { e.preventDefault(); submitCapture(f); };
     f.text.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitCapture(f); };
   });
+  // 长按分类标签可以改名
+  $$("[data-cat], [data-pick]").forEach((el) => {
+    const id = el.dataset.cat || el.dataset.pick;
+    if (catOf(id)) bindLongPress(el, () => openCatSheet(id));
+  });
   $$("[data-deck]").forEach((b) => (b.onclick = (e) => {
     e.stopPropagation();
     UI.decks ||= new Set();
@@ -1141,7 +1180,7 @@ function bindCommon() {
   }
   $$("[data-sg]").forEach((b) => (b.onclick = () => acceptSuggest(b.dataset.id, b.dataset.sg)));
   $$("[data-sgx]").forEach((b) => (b.onclick = () => dismissSuggest(b.dataset.id, b.dataset.sgx)));
-  $$("[data-cat]").forEach((b) => (b.onclick = () => { UI.cat = b.dataset.cat; render(); }));
+  $$("[data-cat]").forEach((b) => (b.onclick = () => { if (b.dataset.longpressed) { delete b.dataset.longpressed; return; } UI.cat = b.dataset.cat; render(); }));
   const oo = $("#only-open"); if (oo) oo.onclick = () => { UI.onlyOpen = !UI.onlyOpen; render(); };
   const dice = $("#dice"); if (dice) dice.onclick = () => {
     const open = S.questions.filter((q) => !q.answer && !q.topic_id);
@@ -1149,7 +1188,7 @@ function bindCommon() {
   };
 
   // 记录框里选分类（再点一次取消）、当场新建分类
-  $$("[data-pick]").forEach((b) => (b.onclick = () => { UI.pickCat = UI.pickCat === b.dataset.pick ? null : b.dataset.pick; keepDraft(render); }));
+  $$("[data-pick]").forEach((b) => (b.onclick = () => { if (b.dataset.longpressed) { delete b.dataset.longpressed; return; } UI.pickCat = UI.pickCat === b.dataset.pick ? null : b.dataset.pick; keepDraft(render); }));
   $$("[data-newcat]").forEach((b) => (b.onclick = () => { UI.newCatOpen = !UI.newCatOpen; keepDraft(render); const n = $("#nc-name"); if (n) n.focus(); }));
   const ncOk = $("#nc-ok");
   if (ncOk) ncOk.onclick = async () => {
@@ -1173,7 +1212,7 @@ function bindCommon() {
 
   // 分类
   $$("[data-tile]").forEach((t) => (t.onclick = (e) => { if (e.target.closest("[data-edit-cat]")) return; UI.cat = t.dataset.tile; go("#/"); }));
-  $$("[data-edit-cat]").forEach((b) => (b.onclick = () => { editingCat = b.dataset.editCat; render(); scrollTo(0, 0); }));
+  $$("[data-edit-cat]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); editingCat = b.dataset.editCat; render(); scrollTo(0, 0); }));
   const ca = $("#cat-add"); if (ca) ca.onclick = () => { editingCat = "new"; render(); scrollTo(0, 0); $("#cat-form input[name=name]").focus(); };
   const cf = $("#cat-form");
   if (cf) {

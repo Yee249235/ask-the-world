@@ -383,3 +383,5 @@ a.stat.link span { color: var(--muted); }
 .fcard .ftext { flex: 1; }
 .fcard .fstate { flex: none; }
 .fcard.unanswered { border-left: 3px solid var(--sprout); }
+
+.chip { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
