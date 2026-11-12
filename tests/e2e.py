@@ -45,7 +45,13 @@ async def main():
         await no_overflow(pg, "火花首页")
 
         # ---------- 火花：先记下（选了分类）----------
-        await pg.click("[data-pick] >> nth=1"); cat_name = (await pg.inner_text("[data-pick].on")).strip()
+        check("记录框：分类平时是收起的", await pg.locator(".pick-list").count() == 0)
+        await pg.click("#pick-toggle"); await pg.wait_for_timeout(200)
+        check("记录框：点开后是可以上下滑的列表", await pg.eval_on_selector(".pick-list", "e => getComputedStyle(e).overflowY") == "auto")
+        await pg.click(".pick-list [data-pick] >> nth=2"); await pg.wait_for_timeout(200)
+        cat_name = (await pg.inner_text("#pick-toggle")).replace("▾", "").strip()
+        check("记录框：选好后自动收起并显示所选分类", await pg.locator(".pick-list").count() == 0 and len(cat_name) > 2, cat_name)
+        check("记录框：「新分类」按钮在外面", await pg.locator(".pick-bar [data-newcat]").count() == 1)
         await pg.fill(".capture textarea", "为什么炒青菜要大火？"); await pg.click("[data-mode=save]"); await pg.wait_for_timeout(800)
         first = pg.locator(".card").first
         check("火花：先记下后出现在最上面", "炒青菜" in await first.inner_text())
@@ -125,7 +131,7 @@ async def main():
         await pg.fill("#topic-form input[name=goal]", "年底上线"); await pg.click("#topic-form button.primary"); await pg.wait_for_timeout(600)
         check("课题：新建后进入课题页", "做一个自己的网站" in await pg.inner_text("h1"))
         await no_overflow(pg, "课题页")
-        check("课题：记录框里没有分类选择", await pg.locator(".capture [data-pick]").count() == 0)
+        check("课题：记录框里没有分类选择", await pg.locator(".capture #pick-toggle").count() == 0)
         await pg.fill(".capture textarea", "网站用什么框架？"); await pg.click("[data-mode=answer]")
         await pg.wait_for_selector("#snack.show", timeout=15000)
         tcard = pg.locator(".journey .card", has_text="网站用什么框架").first

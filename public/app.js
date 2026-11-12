@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122156";
+const VERSION = "11122201";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -412,11 +412,18 @@ function render() {
 
 // ---------- 记录框 ----------
 function captureBox({ topicId = null, placeholder = "冒出一个问题？先记下来…" } = {}) {
+  const cur = catOf(UI.pickCat);
   const pick = topicId ? "" : `
-    <div class="pick-row" role="group" aria-label="选择分类">
-      ${S.categories.map((c) => `<button type="button" class="chip ${UI.pickCat === c.id ? "on" : ""}" data-pick="${c.id}">${c.emoji} ${esc(c.name)}</button>`).join("")}
+    <div class="pick-bar">
+      <button type="button" class="pick-toggle ${cur ? "chosen" : ""}" id="pick-toggle" aria-expanded="${!!UI.pickOpen}">
+        <span>${cur ? `${cur.emoji} ${esc(cur.name)}` : "🏷 选择分类"}</span><span class="caret">${UI.pickOpen ? "▴" : "▾"}</span>
+      </button>
       <button type="button" class="chip add-cat" data-newcat>＋ 新分类</button>
     </div>
+    ${UI.pickOpen ? `<div class="pick-list" role="listbox" aria-label="选择分类">
+      <button type="button" class="pick-item ${!UI.pickCat ? "on" : ""}" data-pick="">📥 不选分类</button>
+      ${S.categories.map((c) => `<button type="button" class="pick-item ${UI.pickCat === c.id ? "on" : ""}" data-pick="${c.id}"><span>${c.emoji} ${esc(c.name)}</span>${UI.pickCat === c.id ? "<b>✓</b>" : ""}</button>`).join("")}
+    </div>` : ""}
     ${UI.newCatOpen ? `<div class="newcat-row">
       <input class="input emo" id="nc-emoji" value="🍉" aria-label="emoji，可以用键盘输入任意表情" autocomplete="off" />
       <input class="input" id="nc-name" placeholder="新分类名，比如：云计算" maxlength="12" style="flex:1" />
@@ -1462,8 +1469,9 @@ function bindCommon() {
   };
 
   // 记录框里选分类（再点一次取消）、当场新建分类
-  $$("[data-pick]").forEach((b) => (b.onclick = () => { if (b.dataset.longpressed) { delete b.dataset.longpressed; return; } UI.pickCat = UI.pickCat === b.dataset.pick ? null : b.dataset.pick; keepDraft(render); }));
-  $$("[data-newcat]").forEach((b) => (b.onclick = () => { UI.newCatOpen = !UI.newCatOpen; keepDraft(render); const n = $("#nc-name"); if (n) n.focus(); }));
+  $$("[data-pick]").forEach((b) => (b.onclick = () => { if (b.dataset.longpressed) { delete b.dataset.longpressed; return; } UI.pickCat = b.dataset.pick || null; UI.pickOpen = false; keepScroll(render); }));
+  const pt = $("#pick-toggle"); if (pt) pt.onclick = () => { UI.pickOpen = !UI.pickOpen; UI.newCatOpen = false; keepScroll(render); };
+  $$("[data-newcat]").forEach((b) => (b.onclick = () => { UI.newCatOpen = !UI.newCatOpen; UI.pickOpen = false; keepScroll(render); const n = $("#nc-name"); if (n) n.focus(); }));
   const ncOk = $("#nc-ok");
   if (ncOk) ncOk.onclick = async () => {
     const name = $("#nc-name").value.trim();

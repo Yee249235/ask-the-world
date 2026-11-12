@@ -585,3 +585,27 @@ body.drawer-open .menu-btn span:nth-child(3) { transform: translateY(-6px) rotat
 
 .ai-last { font-size: 13.5px; }
 .ai-last .skip { font-size: 12.5px; color: var(--muted); word-break: break-all; }
+
+/* 记录框里的分类：平时收起，点开是一个可以上下滑的列表；「新分类」放在外面 */
+.pick-bar { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.pick-toggle {
+  flex: 1; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0;
+  background: var(--bg); border: 1px solid var(--glass-edge); border-radius: 12px; padding: 9px 12px;
+  font-size: 15px; color: var(--muted); cursor: pointer; text-align: left;
+}
+.pick-toggle span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-toggle.chosen { color: var(--ink); border-color: var(--brass); }
+.pick-toggle .caret { color: var(--muted); flex: none; }
+.pick-bar .add-cat { flex: none; padding: 9px 12px; font-size: 14px; }
+.pick-list {
+  margin-top: 6px; max-height: 232px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  display: grid; gap: 2px; padding: 4px; border-radius: 12px; border: 1px solid var(--glass-edge); background: var(--bg);
+}
+.pick-item {
+  display: flex; justify-content: space-between; align-items: center; width: 100%; text-align: left;
+  border: 0; background: transparent; border-radius: 9px; padding: 10px 12px; font-size: 15.5px; color: var(--ink); cursor: pointer;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.pick-item:active { background: var(--glass); }
+.pick-item.on { background: color-mix(in srgb, var(--brass) 18%, transparent); }
+.pick-item b { color: var(--brass); }
