@@ -137,13 +137,25 @@ ${topicList}
 
 async function aiFollowups(db, env, q) {
   const prompt = `我对世界有一个好奇的问题，以及目前得到的回答。请给出 3 个值得继续追问的问题，帮助我想得更深或更有趣。
-每个问题要短（20 字以内），口语化，彼此方向不同。只输出 JSON 数组，例如 ["...","...","..."]。
+每个问题要短（20 字以内），口语化，彼此方向不同。只输出 JSON 字符串数组，每个问题都要用英文双引号包起来，例如 ["为什么会这样？","有没有例外？","生活中怎么用？"]。
 
 问题：${q.text}
 回答：${q.answer || "（还没有回答）"}`;
-  const r = await chat(env, [{ role: "user", content: prompt }], { temperature: 0.8, maxTokens: 300 });
-  const arr = extractJson(r.text);
-  return (Array.isArray(arr) ? arr : []).map(String).filter(Boolean).slice(0, 3);
+  const r = await chat(env, [{ role: "user", content: prompt }], { temperature: 0.8, maxTokens: 400 });
+  return parseList(r.text).slice(0, 3);
+}
+
+// 模型不一定乖乖输出 JSON（比如漏了引号），先试 JSON，失败就按行/逗号拆开
+function parseList(text) {
+  try {
+    const arr = extractJson(text);
+    if (Array.isArray(arr)) return arr.map((x) => String(x).trim()).filter(Boolean);
+  } catch {}
+  return String(text)
+    .replace(/```\w*/g, "")
+    .split(/\n|[,，](?=\s*["“「]?[^,，]{3,})/)
+    .map((x) => x.replace(/^[\s\[\]"“”「」'\-*\d.、)）]+|[\s\[\]"“”「」',，]+$/g, "").trim())
+    .filter((x) => x.length >= 3 && x.length <= 60);
 }
 
 async function aiRelate(db, env) {

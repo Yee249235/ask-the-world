@@ -105,7 +105,7 @@ async function load() {
 
 // ---------- 外框 ----------
 function shell(inner, active) {
-  const tabs = [["home", "#/", "🗓 时间线"], ["cats", "#/cats", "🗂 分类"], ["topics", "#/topics", "🧭 课题"], ["review", "#/review", "🕸 回顾"], ["settings", "#/settings", "⚙️"]];
+  const tabs = [["home", "#/", "✨ 火花"], ["topics", "#/topics", "🧭 课题"], ["review", "#/review", "🕸 回顾"], ["settings", "#/settings", "⚙️"]];
   return `
   <header class="top"><div class="wrap">
     <a class="brand" href="#/"><b>问世界</b><small>Ask the World</small></a>
@@ -126,7 +126,7 @@ function render() {
   } else baseHash = location.hash || "#/";
   const views = { home: viewHome, cats: viewCats, topics: viewTopics, topic: viewTopic, review: viewReview, settings: viewSettings };
   const fn = views[r.view] || viewHome;
-  const active = r.view === "topic" ? "topics" : r.view;
+  const active = r.view === "topic" ? "topics" : r.view === "cats" ? "home" : r.view;
   if (graph) graph.stop();
   app.innerHTML = shell(fn(r), active);
   bindCommon();
@@ -137,12 +137,23 @@ function render() {
 
 // ---------- 记录框 ----------
 function captureBox({ topicId = null, placeholder = "冒出一个问题？先记下来…" } = {}) {
+  const pick = topicId ? "" : `
+    <div class="pick-row" role="group" aria-label="选择分类">
+      ${S.categories.map((c) => `<button type="button" class="chip ${UI.pickCat === c.id ? "on" : ""}" data-pick="${c.id}">${c.emoji} ${esc(c.name)}</button>`).join("")}
+      <button type="button" class="chip add-cat" data-newcat>＋ 新分类</button>
+    </div>
+    ${UI.newCatOpen ? `<div class="newcat-row">
+      <input class="input emo" id="nc-emoji" value="🔍" maxlength="4" aria-label="emoji" />
+      <input class="input" id="nc-name" placeholder="新分类名，比如：云计算" maxlength="12" style="flex:1" />
+      <button type="button" class="btn small primary" id="nc-ok">添加</button>
+    </div>` : ""}`;
   return `
   <form class="capture" data-topic="${topicId || ""}">
     <textarea name="text" rows="2" placeholder="${placeholder}" aria-label="新问题"></textarea>
     <input class="ctx" name="context" placeholder="＋ 当时的场景（可不填）：在哪、因为什么想到的" aria-label="场景" />
+    ${pick}
     <div class="row">
-      <span class="hint">${hasAI() ? "🤖 AI 会建议分类，你来决定" : "记下来，之后再慢慢找答案"}</span>
+      <span class="hint">${topicId ? "会按时间排进这个课题" : UI.pickCat ? `放进 ${catOf(UI.pickCat)?.emoji || ""} ${esc(catOf(UI.pickCat)?.name || "")}` : "不选分类也可以，之后再放"}</span>
       <button class="btn primary">记下 ✍️</button>
     </div>
   </form>`;
@@ -155,12 +166,11 @@ async function submitCapture(form) {
   const btn = form.querySelector("button");
   btn.disabled = true;
   try {
-    const q = await api("questions", { method: "POST", body: { text, context: form.context.value.trim(), topic_id: topicId } });
+    const q = await api("questions", { method: "POST", body: { text, context: form.context.value.trim(), topic_id: topicId, category_id: topicId ? null : UI.pickCat || null } });
     upsertQ(q);
     form.reset();
     toast("记下了 🌱");
     render();
-    if (hasAI()) classify(q.id);
   } catch (e) { toast(e.message); }
   btn.disabled = false;
 }
@@ -245,16 +255,17 @@ async function dismissSuggest(id, key) {
 
 // ---------- 时间线 ----------
 function viewHome() {
-  let qs = S.questions;
+  const sparks = S.questions.filter((q) => !q.topic_id);
+  let qs = sparks;
   if (UI.cat === "none") qs = qs.filter((q) => !q.category_id);
   else if (UI.cat !== "all") qs = qs.filter((q) => q.category_id === UI.cat);
   if (UI.onlyOpen) qs = qs.filter((q) => !q.answer);
-  const count = (id) => S.questions.filter((q) => q.category_id === id).length;
-  const uncat = S.questions.filter((q) => !q.category_id).length;
-  const open = S.questions.filter((q) => !q.answer).length;
+  const count = (id) => sparks.filter((q) => q.category_id === id).length;
+  const uncat = sparks.filter((q) => !q.category_id).length;
+  const open = sparks.filter((q) => !q.answer).length;
 
   let body = "";
-  if (!S.questions.length) {
+  if (!sparks.length) {
     body = `<div class="empty"><span class="big">🔍</span>还没有问题。<br/>今天有什么让你好奇的吗？哪怕很小的事都可以。</div>`;
   } else if (!qs.length) {
     body = `<div class="empty"><span class="big">🧭</span>这里还没有问题</div>`;
@@ -270,12 +281,14 @@ function viewHome() {
   <section class="hero">
     <div class="deco" aria-hidden="true">🔭 🔍 🧭 ✨</div>
     <h1>今天对世界好奇了什么？</h1>
+    <p class="muted" style="margin:0">火花：日常冒出来的问题，彼此不需要有关联。想为一件事连续发问，就去「课题」。</p>
   </section>
   ${captureBox()}
   <div class="filters">
-    <button class="chip ${UI.cat === "all" ? "on" : ""}" data-cat="all">全部 <span class="n">${S.questions.length}</span></button>
+    <button class="chip ${UI.cat === "all" ? "on" : ""}" data-cat="all">全部 <span class="n">${sparks.length}</span></button>
     ${S.categories.map((c) => `<button class="chip ${UI.cat === c.id ? "on" : ""}" data-cat="${c.id}">${c.emoji} ${esc(c.name)} <span class="n">${count(c.id)}</span></button>`).join("")}
     ${uncat ? `<button class="chip ${UI.cat === "none" ? "on" : ""}" data-cat="none">📥 未分类 <span class="n">${uncat}</span></button>` : ""}
+    <a class="chip" href="#/cats" style="text-decoration:none">⚙︎ 管理分类</a>
   </div>
   <div class="filters">
     <button class="chip ${UI.onlyOpen ? "on" : ""}" id="only-open">🌱 只看未解答 <span class="n">${open}</span></button>
@@ -304,8 +317,8 @@ function catForm(c) {
 function viewCats() {
   const count = (id) => S.questions.filter((q) => q.category_id === id).length;
   return `
-  <section class="hero"><div class="deco" aria-hidden="true">🗂 🏷 🔍</div><h1>分类</h1>
-  <p class="muted" style="margin:0">按领域放问题，彼此不需要有关联。AI 会帮你建议，最后由你决定。</p></section>
+  <section class="hero"><div><a href="#/" style="text-decoration:none;font-size:14px">← 回到火花</a></div><h1>管理分类</h1>
+  <p class="muted" style="margin:0">火花按领域放。分类由你自己定，可以随时增加、改名、删除。</p></section>
   ${editingCat ? catForm(editingCat === "new" ? null : catOf(editingCat)) : ""}
   <div class="tiles">
     ${S.categories.map((c) => `
@@ -471,7 +484,7 @@ function sheetHTML(q) {
         ${hasAI() ? `<button type="button" class="btn small ghost" id="sh-ideas" ${busy.ideas ? "disabled" : ""}>${busy.ideas ? `<span class="spin">💭</span> 想想…` : "💭 没思路？让 AI 提示一下"}</button>` : "<span></span>"}
         <button class="btn small primary">追问</button>
       </div>
-      ${ideas?.length ? `<div class="ideas">${ideas.map((t) => `<button type="button" class="idea" data-idea="${esc(t)}">${esc(t)}</button>`).join("")}</div>` : ""}
+      ${ideas?.length ? `<div class="ideas"><span class="muted" style="font-size:12.5px">AI 的提示，点一下放进追问框：</span>${ideas.map((t) => `<button type="button" class="idea" data-idea="${esc(t)}">💭 ${esc(t)}</button>`).join("")}</div>` : ""}
     </form>
 
     ${rel.length ? `<h4 class="section-t">🔗 有关联的问题</h4><div class="list">${rel.map(({ l, other }) => `<button class="mini" data-goto="${other.id}">${esc(other.text)}<small>${esc(l.why)}</small></button>`).join("")}</div>` : ""}
@@ -598,7 +611,8 @@ function bindSheet(id) {
     catch (e) { toast(e.message.slice(0, 80)); }
     UI.busy[id] = { ...UI.busy[id], ideas: false }; refreshSheet(id);
   };
-  $$("[data-idea]", sh).forEach((b) => (b.onclick = () => { ff.text.value = b.dataset.idea; ff.text.focus(); }));
+  // 点提示：直接填进追问框，可以改一改再点「追问」
+  $$("[data-idea]", sh).forEach((b) => (b.onclick = () => { ff.text.value = b.dataset.idea; ff.text.focus(); ff.text.setSelectionRange(ff.text.value.length, ff.text.value.length); }));
 }
 
 // ---------- 回顾：网络图 ----------
@@ -748,6 +762,14 @@ function startGraph() {
   graph = { stop() { running = false; ro.disconnect(); graph = null; } };
 }
 
+function keepDraft(fn) {
+  const f = $("form.capture:not(#sh-follow)");
+  const draft = f ? { text: f.text.value, context: f.context.value } : null;
+  fn();
+  const g = $("form.capture:not(#sh-follow)");
+  if (g && draft) { g.text.value = draft.text; g.context.value = draft.context; }
+}
+
 // ---------- 事件绑定 ----------
 function bindCommon() {
   $$("form.capture:not(#sh-follow)").forEach((f) => {
@@ -760,8 +782,24 @@ function bindCommon() {
   $$("[data-cat]").forEach((b) => (b.onclick = () => { UI.cat = b.dataset.cat; render(); }));
   const oo = $("#only-open"); if (oo) oo.onclick = () => { UI.onlyOpen = !UI.onlyOpen; render(); };
   const dice = $("#dice"); if (dice) dice.onclick = () => {
-    const open = S.questions.filter((q) => !q.answer);
+    const open = S.questions.filter((q) => !q.answer && !q.topic_id);
     openQ(open[Math.floor(Math.random() * open.length)].id);
+  };
+
+  // 记录框里选分类（再点一次取消）、当场新建分类
+  $$("[data-pick]").forEach((b) => (b.onclick = () => { UI.pickCat = UI.pickCat === b.dataset.pick ? null : b.dataset.pick; keepDraft(render); }));
+  $$("[data-newcat]").forEach((b) => (b.onclick = () => { UI.newCatOpen = !UI.newCatOpen; keepDraft(render); const n = $("#nc-name"); if (n) n.focus(); }));
+  const ncOk = $("#nc-ok");
+  if (ncOk) ncOk.onclick = async () => {
+    const name = $("#nc-name").value.trim();
+    if (!name) return $("#nc-name").focus();
+    try {
+      const c = await api("categories", { method: "POST", body: { name, emoji: $("#nc-emoji").value.trim() || "🔍" } });
+      S.categories.push(c);
+      UI.pickCat = c.id; UI.newCatOpen = false;
+      toast(`新分类 ${c.emoji} ${c.name}`);
+      keepDraft(render);
+    } catch (e) { toast(e.message); }
   };
 
   // emoji 选择

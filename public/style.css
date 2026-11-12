@@ -267,3 +267,10 @@ a { color: var(--teal); }
   .nav { justify-content: space-between; padding: 6px 0 8px; }
   .nav a { padding: 5px 9px; }
 }
+
+/* 记录框里的分类选择 */
+.pick-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.pick-row .chip.on { background: var(--brass); border-color: var(--brass); color: #fff; }
+.pick-row .add-cat { border-style: dashed; color: var(--muted); background: transparent; }
+.newcat-row { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+.newcat-row .emo { width: 56px; text-align: center; }
