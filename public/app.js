@@ -859,4 +859,12 @@ function bindCommon() {
 
 window.addEventListener("keydown", (e) => { if (e.key === "Escape" && sheetEl) leaveSheet(); });
 
-load().catch(() => {});
+// 第一次加载失败时不要留一个空白页，显示原因和重试按钮
+load().catch((e) => {
+  if (e.message === "请先登录") return; // 已经显示登录页
+  app.innerHTML = `<div class="login"><div style="text-align:center;max-width:360px">
+    <div class="big" style="font-size:48px">🔭</div>
+    <h1 style="font-family:var(--font-display);margin:8px 0">问世界</h1>
+    <p class="err">${esc(e.message)}</p>
+    <button class="btn primary" onclick="location.reload()">重试</button></div></div>`;
+});
