@@ -824,30 +824,7 @@ body.window-open > #app { opacity: 0; pointer-events: none; transition: opacity 
 :root[data-sky="day"][data-weather="snow"] .win::before, :root[data-sky="day"][data-weather="fog"] .win::before { background: radial-gradient(120% 75% at 50% 42%, rgba(12, 20, 40, .55), rgba(12, 20, 40, .28) 75%); }
 .win > * { position: relative; }
 
-/* ---------- 手卷：一天的卡片贴在一幅横向的卷上，左右滑着看 ---------- */
-.day .roll-pos { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--muted);
-  padding: 2px 9px; border-radius: 999px; border: 1px solid var(--glass-edge); }
-.roll {
-  position: relative; display: flex; gap: 12px; align-items: flex-start;
-  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory; scroll-padding-inline: 16px;
-  margin: 0 -16px; padding: 14px 16px 18px;
-  scrollbar-width: none; -webkit-overflow-scrolling: touch;
-  /* 卷纸：一条半透明的长带，卡片贴在上面 */
-  background:
-    linear-gradient(to bottom, transparent 22px, rgba(255,255,255,.07) 22px, rgba(255,255,255,.035) calc(100% - 26px), transparent calc(100% - 26px)) local;
-}
-.roll::-webkit-scrollbar { display: none; }
-/* 两端渐隐，像卷起来的纸边 */
-.roll:not(.single) { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 22px), transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 22px), transparent 100%); }
-.roll.at-start { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent 100%); mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent 100%); }
-.roll.at-end:not(.at-start) { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 16px); mask-image: linear-gradient(to right, transparent 0, #000 16px); }
-.roll.at-start.at-end { -webkit-mask-image: none; mask-image: none; }
-.roll-item { flex: 0 0 84%; max-width: 560px; scroll-snap-align: start; min-width: 0; }
-.roll.single .roll-item { flex-basis: 100%; max-width: none; }
-.roll-item:last-child { scroll-snap-align: end; }
-/* 卡片高度不一，统一一个舒服的最低高度，卷面更整齐 */
-.roll:not(.single) .roll-item > .stack > .card { min-height: 168px; }
-@media (min-width: 760px) { .roll { margin: 0; padding-inline: 4px; scroll-padding-inline: 4px; } .roll-item { flex-basis: 70%; } }
-@media (prefers-reduced-motion: reduce) { .roll { scroll-behavior: auto; } }
+/* ---------- 滚轮：上下滑时卡片沿弧面转动，正对视线的那张最清楚 ---------- */
+.drum > *, .day:has(+ .drum) { will-change: transform, opacity; }
+/* 留出下半个轮子，让最后一张也能转到正面 */
+html.has-drum main { padding-bottom: 42vh; }

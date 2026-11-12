@@ -202,23 +202,23 @@ async def main():
         check("统计：柱状图画出来了", await pg.locator(".chart-wrap .bar").count() > 0)
         await no_overflow(pg, "统计页")
 
-        # ---------- 手卷 ----------
-        for t in ["手卷测试一", "手卷测试二", "手卷测试三"]:
+        # ---------- 滚轮 ----------
+        for t in ["滚轮测试一", "滚轮测试二", "滚轮测试三", "滚轮测试四", "滚轮测试五"]:
             await pg.evaluate(f"fetch('/api/questions',{{method:'POST',headers:{{'content-type':'application/json'}},body:JSON.stringify({{text:'{t}'}})}})")
         await pg.goto(BASE + "/#/"); await pg.reload(); await pg.wait_for_timeout(1200)
         await pg.click("#menu-btn"); await pg.locator(".dr-item[data-cat=all]").click(); await pg.wait_for_timeout(400)
-        roll = pg.locator(".roll:not(.single)").first
-        check("手卷：同一天的问题排成一卷", await roll.count() == 1 and await roll.locator(".roll-item").count() >= 3)
-        await roll.scroll_into_view_if_needed(); bb = await roll.bounding_box()
-        y = bb["y"] + bb["height"] / 2
-        await pg.evaluate("document.querySelector('.roll:not(.single)').scrollLeft = 0"); await pg.wait_for_timeout(200)
-        await swipe(pg, -200, y=y); await pg.wait_for_timeout(500)
-        check("手卷：在卷上横滑不会切页面", route_ok := (await pg.evaluate("location.hash")) in ("", "#/"))
-        await pg.evaluate("const r=document.querySelector('.roll:not(.single)'); r.scrollLeft = r.scrollWidth"); await pg.wait_for_timeout(500)
-        pos = await pg.locator(".roll-pos").first.inner_text()
-        check("手卷：右上角显示第几张", pos.split("/")[0].strip() == pos.split("/")[1].strip(), pos)
-        await swipe(pg, -200, y=y); await pg.wait_for_timeout(700)
-        check("手卷：卷到头再滑，才切到课题", "topics" in await pg.evaluate("location.hash"))
+        await pg.evaluate("document.querySelectorAll('.drum > *')[2].scrollIntoView({block: 'center'})"); await pg.wait_for_timeout(900)
+        info = await pg.evaluate("""() => { const H = innerHeight, out = [];
+          for (const el of document.querySelectorAll('.drum > *')) { const r = el.getBoundingClientRect(); if (r.bottom < 0 || r.top > H) continue;
+            const m = new DOMMatrix(getComputedStyle(el).transform); out.push({ c: (r.top + r.bottom) / 2 / H, tilt: Math.abs(Math.asin(Math.max(-1, Math.min(1, m.m23))) * 180 / Math.PI) }); }
+          return out; }""")
+
+        mid = min(info, key=lambda x: abs(x["c"] - 0.5)) if info else None
+        edge = max(info, key=lambda x: abs(x["c"] - 0.5)) if info else None
+        check("滚轮：正中间那张正对着你", bool(mid) and mid["tilt"] < 8, str(mid))
+        check("滚轮：上下边上的卡片倒向后面", bool(edge) and edge["tilt"] > 15, str(edge))
+        await swipe(pg, -200, y=420); await pg.wait_for_timeout(500)
+        check("滚轮：没有加左右翻（左滑照常切到课题）", "topics" in await pg.evaluate("location.hash"))
         await pg.goto(BASE + "/#/"); await pg.wait_for_timeout(500)
 
         # ---------- 开窗 ----------
