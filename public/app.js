@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122119";
+const VERSION = "11122126";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -617,7 +617,9 @@ function viewSettings() {
   <section class="hero"><div class="deco" aria-hidden="true">⚙️ 🧰</div><h1>设置</h1></section>
   <div class="panel">
     <h3>🤖 站内 AI</h3>
-    ${hasAI() ? `<p>按顺序尝试，前一个失败会自动换下一个：</p><ul>${S.providers.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>`
+    ${hasAI() ? `<p>回答问题时从最强的免费模型开始，次数用完或出错才往下一个降：</p><ol class="models">${S.providers.map((p) => `<li>${esc(p)}</li>`).join("")}</ol>
+      ${Object.keys(S.usage || {}).length ? `<p style="margin-top:10px">今天已经回答：</p><ul>${Object.entries(S.usage).map(([k, n]) => `<li>${esc(k)}：${n} 次</li>`).join("")}</ul>` : ""}
+      <p style="margin-top:10px;font-size:13px">免费额度（大约）：Nemotron 每天 50 次；GPT-OSS 和 Qwen 各每天约 1000 次、20 万 token；联网搜索每月 1000 次。全部免费，用完只会自动换下一个，不会收费。</p>`
       : `<p>还没有配置 AI 接口。在 Cloudflare 的环境变量里加上 <code>GROQ_API_KEY</code> 等就能启用（见 README）。没有 AI 也可以正常记录，只是不能自动解答。</p>`}
   </div>
   <div class="panel">

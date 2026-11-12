@@ -37,7 +37,21 @@ async function ensureSeed(db) {
   ]);
 }
 
-async function getState(db, env) {
+// 今天各个模型回答了多少次（按答案的来源统计，日本时间 0 点起算）
+async function usageToday(db, request) {
+  const tzOff = 9 * 3600e3;
+  const start = Math.floor((Date.now() + tzOff) / 864e5) * 864e5 - tzOff;
+  const { results } = await db.prepare("SELECT source_model AS m, COUNT(*) AS n FROM questions WHERE source='site_ai' AND updated_at >= ? GROUP BY source_model").bind(start).all();
+  const out = {};
+  for (const r of results) {
+    const key = String(r.m || "").replace(/ · 🌐 联网$/, "");
+    out[key] = (out[key] || 0) + r.n;
+    if (/联网/.test(r.m || "")) out["🌐 联网搜索"] = (out["🌐 联网搜索"] || 0) + r.n;
+  }
+  return out;
+}
+
+async function getState(db, env, request) {
   await ensureSeed(db);
   const [c, t, q, l, s] = await Promise.all([
     db.prepare("SELECT * FROM categories ORDER BY sort, created_at").all(),
@@ -52,7 +66,8 @@ async function getState(db, env) {
     questions: q.results.map(parseQ),
     links: l.results,
     settings: s,
-    providers: activeProviders(env).map((p) => `${p.label} · ${p.model}`),
+    providers: activeProviders(env, "answer").map((p) => `${p.label} · ${p.model.replace(/:free$/, "")}`),
+    usage: await usageToday(db, request),
     search: hasSearch(env),
   };
 }
@@ -313,7 +328,7 @@ export async function onRequest({ request, env, params }) {
   const seg = path.split("/");
 
   // 全部数据
-  if (path === "state" && m === "GET") return json(await getState(db, env));
+  if (path === "state" && m === "GET") return json(await getState(db, env, request));
 
   // 问题
   if (seg[0] === "questions") {
