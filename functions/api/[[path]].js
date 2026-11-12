@@ -45,6 +45,7 @@ async function usageToday(db, request) {
   const out = {};
   for (const r of results) {
     const key = String(r.m || "").replace(/ · 🌐 联网$/, "");
+    if (!key) continue;
     out[key] = (out[key] || 0) + r.n;
     if (/联网/.test(r.m || "")) out["🌐 联网搜索"] = (out["🌐 联网搜索"] || 0) + r.n;
   }
