@@ -56,7 +56,7 @@
 | 变量名 | 作用 |
 |---|---|
 | `AI_ORDER` | 尝试顺序，默认 `groq,openrouter,deepseek,custom` |
-| `GROQ_MODEL` | 默认 `llama-3.3-70b-versatile` |
+| `GROQ_MODEL` | 默认 `qwen/qwen3.8-27b,openai/gpt-oss-120b`（逗号分隔，按顺序尝试） |
 | `OPENROUTER_MODEL` | 默认 `openrouter/free`（自动挑一个当前可用的免费模型） |
 | `DEEPSEEK_MODEL` | 默认 `deepseek-chat`，以 DeepSeek 文档里的最新模型名为准 |
 | `CUSTOM_API_KEY` + `CUSTOM_BASE_URL` + `CUSTOM_MODEL` | 接任意兼容 OpenAI 格式的服务（硅基流动、本地 Ollama 的公网地址等） |
