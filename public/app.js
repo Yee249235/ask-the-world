@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122133";
+const VERSION = "11122140";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -260,7 +260,7 @@ function shell(inner, active) {
   return `
   <header class="top"><div class="wrap">
     <div class="brand-row">
-      <button class="menu-btn" id="menu-btn" aria-label="打开分类" aria-controls="drawer" aria-expanded="false"><span></span><span></span><span></span></button>
+      <button class="menu-btn" id="menu-btn" aria-label="${active === "topics" ? "打开课题列表" : "打开分类"}" aria-controls="drawer" aria-expanded="false"><span></span><span></span><span></span></button>
       <a class="brand" href="#/"><b>问世界</b><small>Ask the World</small></a>
     </div>
     <nav class="nav">${tabs.map(([k, h, l]) => `<a href="${h}" class="${active === k ? "on" : ""}">${l}</a>`).join("")}</nav>
@@ -271,6 +271,8 @@ function shell(inner, active) {
 
 // ---------- 左侧分类抽屉 ----------
 function drawerHTML() {
+  const v = route().view;
+  if (v === "topics" || v === "topic") return topicDrawerHTML();
   const sparks = S.questions.filter((q) => !q.topic_id);
   const count = (id) => sparks.filter((q) => q.category_id === id).length;
   const uncat = sparks.filter((q) => !q.category_id).length;
@@ -293,6 +295,28 @@ function drawerHTML() {
     <p class="dr-tip">长按分类可以改名字和 emoji</p>
   </aside>`;
 }
+function topicDrawerHTML() {
+  const cur = route().id;
+  const item = (t) => {
+    const qs = S.questions.filter((q) => q.topic_id === t.id), done = qs.filter((q) => q.answer).length;
+    return `<a class="dr-item ${cur === t.id ? "on" : ""}" href="#/topic/${t.id}" data-close-drawer><span class="de">${t.emoji}</span><span class="dn">${esc(t.name)}</span><span class="dc">${done}/${qs.length}</span></a>`;
+  };
+  const active = S.topics.filter((t) => t.status !== "done"), done = S.topics.filter((t) => t.status === "done");
+  return `<div class="drawer-bg" id="drawer-bg" hidden></div>
+  <aside class="drawer" id="drawer" aria-label="课题" aria-hidden="true">
+    <div class="dr-head"><b>课题</b><button class="btn small ghost" id="drawer-close" aria-label="关闭">✕</button></div>
+    <div class="dr-list">
+      ${active.map(item).join("") || `<p class="dr-tip" style="margin:0 6px">还没有进行中的课题</p>`}
+    </div>
+    ${done.length ? `<div class="dr-sec"><p class="dr-tip" style="margin:0 6px 4px">已完成</p>${done.map(item).join("")}</div>` : ""}
+    <div class="dr-sec">
+      <a class="dr-item" href="#/topics" data-close-drawer data-new-topic><span class="de">＋</span><span class="dn">新课题</span></a>
+      <a class="dr-item" href="#/topics" data-close-drawer><span class="de">🗺</span><span class="dn">全部课题</span></a>
+    </div>
+    <p class="dr-tip">每个课题是一条独立的探索路线，不需要分类</p>
+  </aside>`;
+}
+
 function setDrawer(open) {
   const d = $("#drawer"), bg = $("#drawer-bg"), b = $("#menu-btn");
   if (!d) return;
@@ -396,7 +420,7 @@ function card(q, { deck = 0, open = false } = {}) {
   <article class="card ${q.answer ? "" : "open"} ${UI.fresh === q.id ? "fresh" : ""} ${UI.selecting ? "selecting" : ""} ${UI.sel?.has(q.id) ? "picked" : ""}" data-open="${q.id}">
     ${UI.selecting ? `<span class="tick" aria-hidden="true">${UI.sel.has(q.id) ? "✓" : ""}</span>` : ""}
     <div class="meta">
-      ${c ? `<span class="chip">${c.emoji} ${esc(c.name)}</span>` : `<span class="chip">📥 未分类</span>`}
+      ${t ? "" : c ? `<span class="chip">${c.emoji} ${esc(c.name)}</span>` : `<span class="chip">📥 未分类</span>`}
       ${t ? `<span class="chip topic">${t.emoji} ${esc(t.name)}</span>` : ""}
       ${UI.recent?.has(q.id) && q.answer ? `<span class="chip just">💡 刚答好</span>` : ""}
       <span class="time">${hm(q.created_at)}</span>
@@ -754,13 +778,13 @@ function sheetHTML(q) {
     ${rel.length ? `<h4 class="section-t">🔗 有关联的问题</h4><div class="list">${rel.map(({ l, other }) => `<button class="mini" data-goto="${other.id}">${esc(other.text)}<small>${esc(l.why)}</small></button>`).join("")}</div>` : ""}
 
     <details class="more" ${UI.moreOpen ? "open" : ""}>
-      <summary>分类 · 课题 · 场景</summary>
-      <div class="two field">
-        <div><label class="label" for="sh-cat">分类</label>
+      <summary>${q.topic_id ? "课题 · 场景" : "分类 · 课题 · 场景"}</summary>
+      <div class="two field ${q.topic_id ? "no-cat" : ""}">
+        <div ${q.topic_id ? "hidden" : ""}><label class="label" for="sh-cat">分类</label>
           <select class="input" id="sh-cat"><option value="">📥 未分类</option>
           ${S.categories.map((c) => `<option value="${c.id}" ${c.id === q.category_id ? "selected" : ""}>${c.emoji} ${esc(c.name)}</option>`).join("")}</select></div>
         <div><label class="label" for="sh-topic">课题</label>
-          <select class="input" id="sh-topic"><option value="">— 不属于课题 —</option>
+          <select class="input" id="sh-topic"><option value="">— 不属于课题（放回火花）—</option>
           ${S.topics.map((t) => `<option value="${t.id}" ${t.id === q.topic_id ? "selected" : ""}>${t.emoji} ${esc(t.name)}</option>`).join("")}</select></div>
       </div>
       <div class="field"><label class="label" for="sh-ctx">当时的场景</label>
@@ -1312,6 +1336,7 @@ function bindCommon() {
   const mb = $("#menu-btn"); if (mb) mb.onclick = () => setDrawer(!UI.drawer);
   const nv = $("#now-viewing"); if (nv) nv.onclick = () => setDrawer(true);
   const dc = $("#drawer-close"); if (dc) dc.onclick = () => setDrawer(false);
+  $$("[data-close-drawer]").forEach((a) => (a.onclick = () => { UI.drawer = false; if (a.hasAttribute("data-new-topic")) editingTopic = "new"; if (location.hash === a.getAttribute("href")) { setDrawer(false); render(); } }));
   const dbg = $("#drawer-bg"); if (dbg) dbg.onclick = () => setDrawer(false);
   if (UI.drawer) setDrawer(true);
   if (UI.fresh) setTimeout(() => { UI.fresh = null; }, 50);

@@ -580,3 +580,5 @@ body.drawer-open .menu-btn span:nth-child(3) { transform: translateY(-6px) rotat
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
 }
 .now-viewing .muted { font-size: 13px; }
+
+.two.no-cat { grid-template-columns: 1fr; }
