@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122209";
+const VERSION = "11122224";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -288,9 +288,9 @@ function go(hash) { location.hash = hash; }
 function renderLogin() {
   app.innerHTML = `
   <div class="login"><form id="lf">
-    <div class="big">🔭</div>
-    <h1>问世界</h1>
-    <p class="muted">每天对世界发问的地方</p>
+    <div class="big">🪟</div>
+    <h1>雾窗</h1>
+    <p class="muted">在起雾的玻璃上，写下对世界的疑问</p>
     <input class="input" id="pw" type="password" placeholder="密码" autocomplete="current-password" />
     <button class="btn primary" style="justify-content:center">进入</button>
     <div class="err" id="le"></div>
@@ -308,6 +308,39 @@ function renderLogin() {
 async function load() {
   Object.assign(S, await api("state"));
   render();
+  loadWeather();
+}
+
+function skySelect(key, label, opts) {
+  const cur = window.Sky?.preview?.()[key] || "auto";
+  return `<label class="label" for="pv-${key}">${label}</label><select class="input" id="pv-${key}" data-pv="${key}">${Object.entries(opts).map(([v, l]) => `<option value="${v}" ${v === cur ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+}
+
+// ---------- 窗外的天气 ----------
+let WX = null;
+const WX_EMOJI = { clear: "☀️", cloudy: "⛅", fog: "🌫", drizzle: "🌦", rain: "🌧", storm: "⛈", snow: "🌨" };
+const WX_NAME = { clear: "晴", cloudy: "多云", fog: "雾", drizzle: "小雨", rain: "雨", storm: "雷雨", snow: "雪" };
+const SEASON_NAME = { spring: "春", summer: "夏", autumn: "秋", winter: "冬" };
+const TIME_NAME = { day: "白天", dusk: "黄昏", night: "夜里" };
+async function loadWeather() {
+  try {
+    WX = await api("weather");
+    window.Sky?.setReal(WX);
+    const b = $("#sky-badge"); if (b) b.outerHTML = skyBadge();
+  } catch (e) { console.warn("weather", e); }
+  clearTimeout(loadWeather.t);
+  loadWeather.t = setTimeout(loadWeather, 20 * 60 * 1000);
+}
+function skyBadge() {
+  const st = window.Sky?.state?.() || {};
+  const pv = window.Sky?.preview?.() || {};
+  const previewing = ["weather", "time", "season"].some((k) => pv[k] && pv[k] !== "auto");
+  const w = st.weather || "rain";
+  const parts = [`${WX_EMOJI[w]} ${WX_NAME[w]}`];
+  if (WX && !previewing) parts.push(`${WX.temp}°`);
+  if (WX?.city && !previewing) parts.push(esc(WX.city));
+  parts.push(`${SEASON_NAME[st.season] || ""}${TIME_NAME[st.time] ? "·" + TIME_NAME[st.time] : ""}`);
+  return `<div class="sky-badge" id="sky-badge" title="窗外的天气跟着你所在地的真实天气变化">${parts.join("<i></i>")}${previewing ? `<a href="#/settings" class="pv">预览中</a>` : ""}</div>`;
 }
 
 // ---------- 外框 ----------
@@ -317,7 +350,7 @@ function shell(inner, active) {
   <header class="top"><div class="wrap">
     <div class="brand-row">
       <button class="menu-btn" id="menu-btn" aria-label="${active === "topics" ? "打开课题列表" : "打开分类"}" aria-controls="drawer" aria-expanded="false"><span></span><span></span><span></span></button>
-      <a class="brand" href="#/"><b>问世界</b><small>Ask the World</small></a>
+      <a class="brand" href="#/"><b>雾窗</b><small>问世界</small></a>
     </div>
     <nav class="nav">${tabs.map(([k, h, l]) => `<a href="${h}" class="${active === k ? "on" : ""}">${l}</a>`).join("")}</nav>
   </div></header>
@@ -412,7 +445,7 @@ function render() {
 }
 
 // ---------- 记录框 ----------
-function captureBox({ topicId = null, placeholder = "冒出一个问题？先记下来…" } = {}) {
+function captureBox({ topicId = null, placeholder = "在起雾的玻璃上，写下一个问题…" } = {}) {
   const cur = catOf(UI.pickCat);
   const pick = topicId ? "" : `
     <div class="pick-bar">
@@ -490,7 +523,7 @@ function card(q, { deck = 0, open = false } = {}) {
       <span class="time">${hm(q.created_at)}</span>
     </div>
     <h3>${esc(q.text)}</h3>
-    ${UI.answering?.has(q.id) ? `<p class="ans none"><span class="spin">✨</span> 正在回答…</p>` : q.answer ? `<p class="ans">${esc(plainText(q.answer))}</p>` : `<p class="ans none">🌱 还没有答案</p>`}
+    ${UI.answering?.has(q.id) ? `<p class="ans none"><span class="spin">✨</span> 正在回答…</p>` : q.answer ? `<p class="ans">${esc(plainText(q.answer))}</p>` : `<p class="ans none">🌫 雾还没散，点开来回答</p>`}
     <div class="foot">
       ${p ? `<span>↖ 追问自「${esc(p.text.slice(0, 18))}${p.text.length > 18 ? "…" : ""}」</span>` : ""}
       ${deck ? "" : kids ? `<span>↳ ${kids} 个追问</span>` : ""}
@@ -596,7 +629,7 @@ function viewHome() {
   }
   return `
   <section class="hero">
-    <div class="deco" aria-hidden="true">🔭 🔍 🧭 ✨</div>
+    ${skyBadge()}
     <h1>今天对世界好奇了什么？</h1>
   </section>
   ${captureBox()}
@@ -739,6 +772,16 @@ function viewSettings() {
   const s = S.settings;
   return `
   <section class="hero"><div class="deco" aria-hidden="true">⚙️ 🧰</div><h1>设置</h1></section>
+  <div class="panel">
+    <h3>🪟 窗外</h3>
+    <p>${WX ? `现在你那里是 ${WX_EMOJI[WX.scene]} ${WX_NAME[WX.scene]}，${WX.temp}°${WX.city ? `（${esc(WX.city)}）` : ""}。窗外会跟着真实的天气、时间和季节变化，每 20 分钟更新一次。` : "窗外会跟着你所在地的真实天气、时间和季节变化。"}</p>
+    <p style="margin-bottom:6px">想先看看别的天气，可以在这里预览（只影响这台设备）：</p>
+    <div class="sky-pv">
+      ${skySelect("weather", "天气", { auto: "跟着真实天气", clear: "☀️ 晴", cloudy: "⛅ 多云", fog: "🌫 雾", drizzle: "🌦 小雨", rain: "🌧 雨", storm: "⛈ 雷雨", snow: "🌨 雪" })}
+      ${skySelect("time", "时间", { auto: "跟着真实时间", day: "白天", dusk: "黄昏", night: "夜里" })}
+      ${skySelect("season", "季节", { auto: "跟着真实季节", spring: "🌸 春", summer: "🌿 夏", autumn: "🍁 秋", winter: "❄️ 冬" })}
+    </div>
+  </div>
   <div class="panel">
     <h3>🤖 站内 AI</h3>
     ${hasAI() ? `<p>回答问题时从最强的免费模型开始，次数用完或出错才往下一个降：</p><ol class="models">${S.providers.map((p) => `<li>${esc(p)}</li>`).join("")}</ol>
@@ -1607,6 +1650,11 @@ function bindCommon() {
   }
   const so = $("#set-online");
   if (so) so.onchange = async () => { S.settings = await api("settings", { method: "PUT", body: { answer_online: so.checked ? "1" : "0" } }); toast(so.checked ? "默认联网回答" : "默认不联网回答"); };
+  $$("[data-pv]").forEach((sel) => (sel.onchange = () => {
+    const p = { ...(window.Sky?.preview?.() || {}) };
+    p[sel.dataset.pv] = sel.value;
+    window.Sky?.setPreview(p);
+  }));
   const lo = $("#logout"); if (lo) lo.onclick = async () => { await api("logout", { method: "POST" }); renderLogin(); };
 }
 
@@ -1617,7 +1665,7 @@ load().catch((e) => {
   if (e.message === "请先登录") return; // 已经显示登录页
   app.innerHTML = `<div class="login"><div style="text-align:center;max-width:360px">
     <div class="big" style="font-size:48px">🔭</div>
-    <h1 style="font-family:var(--font-display);margin:8px 0">问世界</h1>
+    <h1 style="font-family:var(--font-display);margin:8px 0">雾窗</h1>
     <p class="err">${esc(e.message)}</p>
     <button class="btn primary" onclick="location.reload()">重试</button></div></div>`;
 });

@@ -17,8 +17,22 @@
   --r: 14px;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
+@media (prefers-color-scheme: dark) { :root:not([data-sky]) {
+    --bg: #0e1322;
+    --paper: #161d31;
+    --ink: #e7ebf5;
+    --muted: #8f99b5;
+    --line: #283150;
+    --brass: #e5a640;
+    --brass-soft: #3a2f1c;
+    --teal: #4fb8b1;
+    --teal-soft: #17343a;
+    --sprout: #86c06c;
+    --danger: #e57070;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
+    color-scheme: dark;
+  } }
+:root[data-sky="night"] {
     --bg: #0e1322;
     --paper: #161d31;
     --ink: #e7ebf5;
@@ -33,7 +47,6 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .25);
     color-scheme: dark;
   }
-}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -287,7 +300,8 @@ details.more summary { cursor: pointer; color: var(--muted); font-size: 13.5px; 
 
 /* 图表用色（已校验色盲可区分） */
 :root { --c-done: #0b8f88; --c-open: #c97d10; }
-@media (prefers-color-scheme: dark) { :root { --c-done: #0b8f88; --c-open: #c27a12; } }
+@media (prefers-color-scheme: dark) { :root:not([data-sky]) { --c-done: #0b8f88; --c-open: #c27a12; } }
+:root[data-sky="night"] { --c-done: #0b8f88; --c-open: #c27a12; }
 
 a.stat.link { text-decoration: none; color: inherit; transition: border-color .15s; }
 a.stat.link:hover, a.stat.link:active { border-color: var(--brass); }
@@ -408,8 +422,20 @@ a.stat.link span { color: var(--muted); }
   --muted: #4f5b73;
   --blur: blur(18px) saturate(1.4);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
+@media (prefers-color-scheme: dark) { :root:not([data-sky]) {
+    --scene: #111a2c;
+    --glass: rgba(22, 30, 52, 0.46);
+    --glass-strong: rgba(18, 25, 44, 0.82);
+    --glass-edge: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
+    --bg: rgba(255, 255, 255, 0.06);
+    --line: rgba(255, 255, 255, 0.10);
+    --ink: #eef1f8;
+    --muted: #a3adc6;
+    --paper: var(--glass);
+  } }
+:root[data-sky="night"] {
+    --paper: var(--glass);
     --scene: #111a2c;
     --glass: rgba(22, 30, 52, 0.46);
     --glass-strong: rgba(18, 25, 44, 0.82);
@@ -420,7 +446,6 @@ a.stat.link span { color: var(--muted); }
     --ink: #eef1f8;
     --muted: #a3adc6;
   }
-}
 
 html { background: var(--scene); }
 body { background: transparent; }
@@ -479,7 +504,8 @@ body { background: transparent; }
 /* 不支持毛玻璃的浏览器，退回到不透明一些的底色 */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root { --glass: rgba(255, 255, 255, 0.86); --glass-strong: rgba(250, 251, 253, 0.96); }
-  @media (prefers-color-scheme: dark) { :root { --glass: rgba(24, 32, 54, 0.9); --glass-strong: rgba(18, 25, 44, 0.96); } }
+  @media (prefers-color-scheme: dark) { :root:not([data-sky]) { --glass: rgba(24, 32, 54, 0.9); --glass-strong: rgba(18, 25, 44, 0.96); } }
+  :root[data-sky="night"] { --glass: rgba(24, 32, 54, 0.9); --glass-strong: rgba(18, 25, 44, 0.96); }
 }
 
 .btn.teal { background: var(--teal); color: #fff; border-color: var(--teal); }
@@ -616,3 +642,98 @@ main.slide-right { animation: inFromLeft .24s cubic-bezier(.2, .8, .2, 1); }
 @keyframes inFromRight { from { transform: translateX(28%); opacity: 0; } }
 @keyframes inFromLeft { from { transform: translateX(-28%); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { main.slide-left, main.slide-right { animation: none; } }
+
+/* ================================================================
+   雾窗：没想通的问题蒙着雾，想通了雾就散了
+   ================================================================ */
+:root { --font-hand: "LXGW WenKai Screen", "Kaiti SC", "STKaiti", "KaiTi", var(--font-display); }
+
+/* 问题用像手写的字（霞鹜文楷），答案用干净的黑体：「我问的」和「我查到的」一眼分开 */
+.card h3, .q-edit, .fcard .ftext, .capture textarea, .hero h1, .mini, .parent-ctx, .topic-card b, .mv-q, .brand b, .login h1, #snack .sm {
+  font-family: var(--font-hand);
+}
+.card h3 { font-size: 18px; letter-spacing: .01em; }
+.q-edit { font-weight: 400; font-size: 23px; }
+.hero h1 { font-weight: 400; letter-spacing: .02em; }
+.brand b { font-weight: 400; letter-spacing: .12em; }
+
+/* 窗外天气的小标签 */
+.sky-badge {
+  display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; color: var(--muted);
+  padding: 5px 12px; border-radius: 999px; background: var(--bg); border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); margin-bottom: 10px;
+}
+.sky-badge i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .6; }
+.sky-badge .pv { font-size: 12px; color: var(--brass); text-decoration: none; }
+.sky-pv { display: grid; gap: 4px; }
+.sky-pv .label { margin-top: 6px; }
+
+/* 记录框：像一块起雾的玻璃 */
+.capture {
+  background:
+    radial-gradient(120% 80% at 20% 0%, rgba(255, 255, 255, .22), transparent 60%),
+    radial-gradient(90% 70% at 90% 100%, rgba(255, 255, 255, .14), transparent 60%),
+    var(--glass);
+}
+:root[data-sky="night"] .capture { background: radial-gradient(120% 80% at 20% 0%, rgba(255, 255, 255, .07), transparent 60%), var(--glass); }
+.capture textarea { font-size: 19px; }
+.capture textarea::placeholder { font-family: var(--font-hand); opacity: .75; }
+
+/* 没想通（还没有答案）：蒙着一层雾 */
+.card.open::before { display: none; }
+.card.open {
+  background:
+    radial-gradient(140% 90% at 15% 10%, rgba(255, 255, 255, .34), transparent 55%),
+    radial-gradient(100% 80% at 85% 90%, rgba(255, 255, 255, .22), transparent 60%),
+    color-mix(in srgb, var(--glass) 70%, rgba(240, 244, 248, .55));
+  -webkit-backdrop-filter: blur(26px) saturate(1.1); backdrop-filter: blur(26px) saturate(1.1);
+}
+:root[data-sky="night"] .card.open {
+  background:
+    radial-gradient(140% 90% at 15% 10%, rgba(255, 255, 255, .08), transparent 55%),
+    color-mix(in srgb, var(--glass) 70%, rgba(120, 135, 170, .18));
+}
+.card .ans.none { color: var(--muted); font-style: normal; }
+
+/* 想通了（有答案）：玻璃擦干净了，更通透，边上一道亮光 */
+.card:not(.open) {
+  background: color-mix(in srgb, var(--glass) 72%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5); backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .55) inset, 0 0 0 1px rgba(255, 255, 255, .25) inset, var(--glass-shadow);
+}
+:root[data-sky="night"] .card:not(.open) { box-shadow: 0 1px 0 rgba(255, 255, 255, .12) inset, var(--glass-shadow); }
+
+/* 刚答好：雾从上往下被擦开，答案从擦痕里显出来 */
+.card.fresh .ans:not(.none) { animation: wipe 1.3s cubic-bezier(.3, .7, .2, 1) both; }
+@keyframes wipe {
+  from { clip-path: inset(0 0 100% 0); filter: blur(4px); opacity: .3; }
+  to { clip-path: inset(0 0 0 0); filter: none; opacity: 1; }
+}
+.fcard.unanswered { border-left: 1px solid var(--glass-edge); background: color-mix(in srgb, var(--glass) 70%, rgba(240, 244, 248, .4)); }
+:root[data-sky="night"] .fcard.unanswered { background: color-mix(in srgb, var(--glass) 75%, rgba(120, 135, 170, .15)); }
+@media (prefers-reduced-motion: reduce) { .card.fresh .ans { animation: none; } }
+
+/* 雾和清透的对比再拉开一点 */
+.card.open {
+  background:
+    radial-gradient(140% 90% at 15% 10%, rgba(255, 255, 255, .45), transparent 55%),
+    radial-gradient(100% 80% at 85% 90%, rgba(255, 255, 255, .3), transparent 60%),
+    rgba(238, 242, 247, .62);
+  -webkit-backdrop-filter: blur(30px) saturate(.9); backdrop-filter: blur(30px) saturate(.9);
+}
+.card:not(.open) {
+  background: rgba(255, 255, 255, .26);
+  -webkit-backdrop-filter: blur(8px) saturate(1.6); backdrop-filter: blur(8px) saturate(1.6);
+}
+:root[data-sky="night"] .card.open {
+  background:
+    radial-gradient(140% 90% at 15% 10%, rgba(255, 255, 255, .1), transparent 55%),
+    rgba(70, 82, 112, .42);
+  -webkit-backdrop-filter: blur(30px) saturate(.8); backdrop-filter: blur(30px) saturate(.8);
+}
+:root[data-sky="night"] .card:not(.open) {
+  background: rgba(18, 25, 44, .32);
+  -webkit-backdrop-filter: blur(8px) saturate(1.5); backdrop-filter: blur(8px) saturate(1.5);
+}
+/* 透明度高的卡片上，字加一点点光晕保证看得清 */
+.card:not(.open) h3, .card:not(.open) .ans { text-shadow: 0 0 12px color-mix(in srgb, var(--scene) 70%, transparent); }

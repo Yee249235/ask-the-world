@@ -4,6 +4,7 @@ import { chat, extractJson, activeProviders } from "../../lib/ai.js";
 import { DEFAULT_SETTINGS, fillTemplate } from "../../lib/prompts.js";
 import { hasSearch, webSearch, today } from "../../lib/search.js";
 import { plainText } from "../../lib/text.js";
+import { getWeather } from "../../lib/weather.js";
 
 // 所有回答（火花、课题、联网、不联网）都遵守的格式规则，和模板分开，保证两边一致
 const FORMAT_RULES = `
@@ -343,6 +344,12 @@ export async function onRequest({ request, env, params }) {
   const m = request.method;
   const body = m === "GET" || m === "DELETE" ? {} : await readJson(request);
   const seg = path.split("/");
+
+  // 窗外的天气
+  if (path === "weather" && m === "GET") {
+    try { return json(await getWeather(request)); }
+    catch (e) { return json({ error: e.message }, 502); }
+  }
 
   // 全部数据
   if (path === "state" && m === "GET") return json(await getState(db, env, request));
