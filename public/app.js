@@ -631,7 +631,7 @@ function sheetHTML(q) {
       <div class="bar space"><span class="label" style="margin:0">答案</span>
         <span class="bar">
           ${hasAI() ? `<button class="btn small brass" id="sh-ai" ${busy.answer ? "disabled" : ""}>${busy.answer === "local" ? `<span class="spin">✨</span> 思考中…` : "✨ 站内 AI"}</button>` : ""}
-          ${hasAI() && S.search ? `<button class="btn small teal" id="sh-web" ${busy.answer ? "disabled" : ""} title="先上网搜索最新资料再回答，适合新闻、热点、现任人物、价格">${busy.answer === "web" ? `<span class="spin">🌐</span> 搜索中…` : "🌐 联网回答"}</button>` : ""}
+          ${hasAI() ? `<button class="btn small teal ${S.search ? "" : "off"}" id="sh-web" ${busy.answer ? "disabled" : ""} title="先上网搜索最新资料再回答，适合新闻、热点、现任人物、价格">${busy.answer === "web" ? `<span class="spin">🌐</span> 搜索中…` : "🌐 联网回答"}</button>` : ""}
           <button class="btn small" id="sh-paste">📥 贴进来</button>
         </span></div>
       <textarea class="textarea" id="sh-ans" placeholder="写下答案，或者贴进来" style="margin-top:8px">${esc(q.answer)}</textarea>
@@ -780,7 +780,7 @@ function bindSheet(id) {
   };
   const aiBtn = $("#sh-ai", sh), webBtn = $("#sh-web", sh);
   if (aiBtn) aiBtn.onclick = ask(aiBtn, false);
-  if (webBtn) webBtn.onclick = ask(webBtn, true);
+  if (webBtn) webBtn.onclick = S.search ? ask(webBtn, true) : () => toast("联网还没开启：需要先设置免费的 Tavily 密钥（见 ⚙️ 设置）");
 
   const ff = $("#sh-follow", sh);
   ff.onsubmit = async (e) => {
