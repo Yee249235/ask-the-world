@@ -24,6 +24,17 @@ async def long_press(pg, el):
     await pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + min(30, bb["height"] / 2))
     await pg.mouse.down(); await pg.wait_for_timeout(700); await pg.mouse.up(); await pg.wait_for_timeout(300)
 
+async def swipe(pg, dx, y=500, x0=None):
+    """在手机上模拟手指横向滑动"""
+    x0 = x0 if x0 is not None else (300 if dx < 0 else 80)
+    await pg.evaluate("""([x0, x1, y]) => {
+      const el = document.elementFromPoint(x0, y) || document.body;
+      const mk = (x) => new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+      el.dispatchEvent(new TouchEvent("touchstart", { touches: [mk(x0)], changedTouches: [mk(x0)], bubbles: true }));
+      el.dispatchEvent(new TouchEvent("touchend", { touches: [], changedTouches: [mk(x1)], bubbles: true }));
+    }""", [x0, x0 + dx, y])
+    await pg.wait_for_timeout(450)
+
 async def no_overflow(pg, where):
     sw, iw = await pg.evaluate("[document.documentElement.scrollWidth, innerWidth]")
     check(f"{where}：页面没有被撑宽", sw <= iw + 1, f"scrollWidth={sw} innerWidth={iw}")
@@ -124,6 +135,21 @@ async def main():
         await long_press(pg, pg.locator(".dr-list .dr-item", has_text=target.split()[-1]))
         await pg.fill(".sheet input[name=name]", "测试改名"); await pg.click(".sheet button.primary"); await pg.wait_for_timeout(600)
         check("分类：长按可以改名", "测试改名" in await pg.inner_text("#now-viewing"))
+
+        # ---------- 左右滑切换页面 ----------
+        await pg.goto(BASE + "/#/"); await pg.wait_for_timeout(500)
+        await swipe(pg, -150)
+        check("滑动：在火花往左滑到课题", await pg.evaluate("location.hash") == "#/topics")
+        await swipe(pg, -150)
+        check("滑动：在课题往左滑到回顾", await pg.evaluate("location.hash") == "#/review")
+        await swipe(pg, 150, y=250)
+        check("滑动：在回顾往右滑回课题", await pg.evaluate("location.hash") == "#/topics")
+        await swipe(pg, 150)
+        check("滑动：在课题往右滑回火花", await pg.evaluate("location.hash") in ("#/", ""))
+        await swipe(pg, 150)
+        check("滑动：在火花往右滑拉出分类抽屉", await pg.eval_on_selector("#drawer", "e => e.classList.contains('open')"))
+        await swipe(pg, -150, x0=200)
+        check("滑动：抽屉开着时往左滑只关抽屉、不翻页", not await pg.eval_on_selector("#drawer", "e => e.classList.contains('open')") and await pg.evaluate("location.hash") in ("#/", ""))
 
         # ---------- 课题 ----------
         await pg.goto(BASE + "/#/topics"); await pg.wait_for_timeout(400)

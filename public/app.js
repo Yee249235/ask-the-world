@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122201";
+const VERSION = "11122209";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -404,6 +404,7 @@ function render() {
   const active = r.view === "topic" ? "topics" : r.view === "cats" ? "home" : r.view === "stats" ? "review" : r.view;
   if (graph) graph.stop();
   app.innerHTML = shell(fn(r), active);
+  if (UI.slide) { const m = $("main"); m.classList.add(`slide-${UI.slide}`); UI.slide = null; }
   bindCommon();
   if (r.view === "review") startGraph();
   closeSheet();
@@ -1399,10 +1400,25 @@ function autoGrow(root = document) {
   document.addEventListener("touchend", (e) => {
     if (!tracking) return;
     const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-    if (Math.abs(dy) > 40 || Math.abs(dx) < 70) return;
-    if (dx > 0 && !UI.drawer && sx > 24) setDrawer(true);
-    else if (dx < 0 && UI.drawer) setDrawer(false);
+    if (Math.abs(dy) > 50 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    // 抽屉开着时：往左滑关上
+    if (UI.drawer) { if (dx < 0) setDrawer(false); return; }
+    if (sx < 24 || UI.selecting) return; // 屏幕最边缘留给手机的返回手势
+    // 左右滑切换「火花 ⇄ 课题 ⇄ 回顾」；在火花再往右滑，拉出左边的分类抽屉
+    const PAGES = ["home", "topics", "review"];
+    const v = route().view;
+    const cur = { topic: "topics", stats: "review", cats: "home" }[v] || v;
+    const i = PAGES.indexOf(cur);
+    if (i < 0) return;
+    if (dx < 0 && i < PAGES.length - 1) swipeTo(PAGES[i + 1], "left");
+    else if (dx > 0 && i > 0) swipeTo(PAGES[i - 1], "right");
+    else if (dx > 0 && i === 0) setDrawer(true);
   }, { passive: true });
+  function swipeTo(page, dir) {
+    UI.slide = dir;
+    go(page === "home" ? "#/" : `#/${page}`);
+    scrollTo({ top: 0 });
+  }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && UI.drawer) setDrawer(false); });
 })();
 

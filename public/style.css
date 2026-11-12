@@ -609,3 +609,10 @@ body.drawer-open .menu-btn span:nth-child(3) { transform: translateY(-6px) rotat
 .pick-item:active { background: var(--glass); }
 .pick-item.on { background: color-mix(in srgb, var(--brass) 18%, transparent); }
 .pick-item b { color: var(--brass); }
+
+/* 左右滑切换页面时的过渡 */
+main.slide-left { animation: inFromRight .24s cubic-bezier(.2, .8, .2, 1); }
+main.slide-right { animation: inFromLeft .24s cubic-bezier(.2, .8, .2, 1); }
+@keyframes inFromRight { from { transform: translateX(28%); opacity: 0; } }
+@keyframes inFromLeft { from { transform: translateX(-28%); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { main.slide-left, main.slide-right { animation: none; } }
