@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122144";
+const VERSION = "11122156";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -25,7 +25,7 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
     credentials: "same-origin",
   });
-  if (res.status === 401) { renderLogin(); throw new Error("请先登录"); }
+  if (res.status === 401 && path !== "login") { renderLogin(); throw new Error("请先登录"); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `请求失败 (${res.status})`);
   return data;
@@ -54,6 +54,25 @@ function snack(msg, action) {
   clearTimeout(snackT);
   snackT = setTimeout(hide, 9000);
 }
+// 和 lib/text.js 里的一样：把 Markdown 变成干净的纯文本（贴进来的别的 AI 回答也用它）
+function plainText(t) {
+  return String(t || "")
+    .replace(/```[a-zA-Z]*\n?/g, "")
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]*/gm, "")
+    .replace(/\*\*\s*(.+?)\s*\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?!\*)/g, "$1$2")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/^[ \t]*[-*+•][ \t]+/gm, "・")
+    .replace(/^[ \t]*>[ \t]?/gm, "")
+    .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, "$1")
+    .replace(/^[ \t]*(-{3,}|\*{3,}|_{3,})[ \t]*$/gm, "")
+    .replace(/\*{2,}/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 const catOf = (id) => S.categories.find((c) => c.id === id);
 const topicOf = (id) => S.topics.find((t) => t.id === id);
 const qOf = (id) => S.questions.find((q) => q.id === id);
@@ -85,7 +104,7 @@ function copyQuestion(q) {
     const tpl = t
       ? S.settings.template_topic.replaceAll("{topic}", t.name).replaceAll("{goal}", t.goal ? `，目标是：${t.goal}` : "")
       : S.settings.template_daily;
-    text = `${tpl}\n\n我的问题：${text}`;
+    text = `${tpl}\n请用纯文本回答，不要使用 Markdown 符号。\n\n我的问题：${text}`;
   }
   copyText(text);
 }
@@ -139,6 +158,7 @@ async function deleteQuestions(ids, withFollowups) {
 function openMoveSheet(id) {
   const q = qOf(id);
   if (!q) return;
+  if (q.topic_id) return openMoveTopicSheet(id);
   const kids = descendants(id).length;
   const bg = document.createElement("div");
   bg.className = "sheet-bg";
@@ -174,6 +194,7 @@ function openMoveSheet(id) {
 function openCatSheet(id) {
   const c = catOf(id);
   if (!c) return;
+  setDrawer(false); // 从抽屉里长按时，先把抽屉收起，不然改名窗口会被挡住
   const bg = document.createElement("div");
   bg.className = "sheet-bg";
   bg.innerHTML = `<form class="sheet move-sheet" role="dialog" aria-label="修改分类" data-cat-id="${id}">
@@ -199,6 +220,41 @@ function openCatSheet(id) {
     if (!body.name) return f.name.focus();
     try { Object.assign(c, await api(`categories/${id}`, { method: "PATCH", body })); toast("分类已修改"); }
     catch (err) { toast(err.message); }
+    close();
+    keepScroll(render);
+  };
+}
+
+// 课题里的问题：长按换到别的课题，或者放回火花
+function openMoveTopicSheet(id) {
+  const q = qOf(id);
+  const kids = descendants(id).length;
+  const bg = document.createElement("div");
+  bg.className = "sheet-bg";
+  bg.innerHTML = `<div class="sheet move-sheet" role="dialog" aria-label="移到别的课题">
+    <div class="sheet-head"><b>移到哪里？</b><button class="btn small ghost" data-mv="x">取消</button></div>
+    <p class="mv-q">${esc(q.text)}</p>
+    ${kids ? `<p class="muted" style="font-size:13px;margin:0 0 10px">它下面的 ${kids} 个追问会一起移过去</p>` : ""}
+    <div class="mv-grid">
+      ${S.topics.filter((t) => t.status !== "done").map((t) => `<button class="mv ${t.id === q.topic_id ? "on" : ""}" data-mv="${t.id}"><span>${t.emoji}</span>${esc(t.name)}</button>`).join("")}
+      <button class="mv" data-mv=""><span>✨</span>放回火花</button>
+    </div>
+  </div>`;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.onclick = async (e) => {
+    if (e.target === bg) return close();
+    const b = e.target.closest("[data-mv]");
+    if (!b) return;
+    if (b.dataset.mv === "x") return close();
+    const tid = b.dataset.mv || null;
+    try {
+      const r = await api("questions/move", { method: "POST", body: { id, topic_id: tid || "" } });
+      r.moved.forEach((qid) => { const x = qOf(qid); if (x) x.topic_id = tid; });
+      qOf(id).parent_id = null;
+      const t = topicOf(tid);
+      toast(`已移到 ${t ? t.emoji + " " + t.name : "✨ 火花"}${r.moved.length > 1 ? `（共 ${r.moved.length} 个）` : ""}`);
+    } catch (err) { toast(err.message); }
     close();
     keepScroll(render);
   };
@@ -426,7 +482,7 @@ function card(q, { deck = 0, open = false } = {}) {
       <span class="time">${hm(q.created_at)}</span>
     </div>
     <h3>${esc(q.text)}</h3>
-    ${UI.answering?.has(q.id) ? `<p class="ans none"><span class="spin">✨</span> 正在回答…</p>` : q.answer ? `<p class="ans">${esc(q.answer)}</p>` : `<p class="ans none">🌱 还没有答案</p>`}
+    ${UI.answering?.has(q.id) ? `<p class="ans none"><span class="spin">✨</span> 正在回答…</p>` : q.answer ? `<p class="ans">${esc(plainText(q.answer))}</p>` : `<p class="ans none">🌱 还没有答案</p>`}
     <div class="foot">
       ${p ? `<span>↖ 追问自「${esc(p.text.slice(0, 18))}${p.text.length > 18 ? "…" : ""}」</span>` : ""}
       ${deck ? "" : kids ? `<span>↳ ${kids} 个追问</span>` : ""}
@@ -645,10 +701,12 @@ function viewTopic(r) {
   if (!t) return `<div class="empty"><span class="big">🧭</span>找不到这个课题</div>`;
   const qs = S.questions.filter((q) => q.topic_id === t.id).sort((a, b) => a.created_at - b.created_at);
   const { total, done } = topicStats(t);
+  const shown = new Set(qs.map((q) => q.id));
+  const roots = qs.filter((q) => !q.parent_id || !shown.has(q.parent_id));
   const step = (q) => `
-    <div class="step ${q.answer ? "done" : ""} ${q.parent_id && qs.some((x) => x.id === q.parent_id) ? "child" : ""}">
+    <div class="step ${q.answer ? "done" : ""}">
       <div class="when">${ymd(q.created_at)} ${hm(q.created_at)}</div>
-      ${card(q)}
+      ${stack(q, shown)}
     </div>`;
   return `
   ${editingTopic === t.id ? topicForm(t) : `
@@ -663,7 +721,7 @@ function viewTopic(r) {
   </section>`}
   ${t.status !== "done" ? captureBox({ topicId: t.id, placeholder: `为了「${t.name}」，接下来想搞清楚什么？` }) : ""}
   ${qs.length && !UI.selecting ? `<div style="margin-top:12px"><button class="chip" id="sel-mode">☑ 批量删除</button></div>` : ""}
-  ${qs.length ? `<div class="journey">${qs.map(step).join("")}</div>` : `<div class="empty"><span class="big">🚩</span>从第一个问题出发吧</div>`}
+  ${qs.length ? `<div class="journey">${roots.map(step).join("")}</div>` : `<div class="empty"><span class="big">🚩</span>从第一个问题出发吧</div>`}
   ${selBar()}
   <div style="height:40px"></div>`;
 }
@@ -738,7 +796,7 @@ function sheetHTML(q) {
 
     ${p ? `<button class="parent-ctx" data-goto="${p.id}">
       <span class="muted">↖ 追问自</span> ${esc(p.text)}
-      ${p.answer ? `<span class="pa">${esc(p.answer)}</span>` : ""}
+      ${p.answer ? `<span class="pa">${esc(plainText(p.answer))}</span>` : ""}
     </button>` : ""}
     <textarea class="q-edit" id="sh-text" rows="1" aria-label="问题">${esc(q.text)}</textarea>
     <div class="bar" style="margin-top:6px">
@@ -755,7 +813,7 @@ function sheetHTML(q) {
           ${hasAI() ? answerButtons(busy) : ""}
           <button class="btn small" id="sh-paste">📥 贴进来</button>
         </span></div>
-      <textarea class="textarea" id="sh-ans" placeholder="写下答案，或者贴进来" style="margin-top:8px">${esc(q.answer)}</textarea>
+      <textarea class="textarea" id="sh-ans" placeholder="写下答案，或者贴进来" style="margin-top:8px">${esc(plainText(q.answer))}</textarea>
       ${linksIn(q.answer)}
       <div class="src" id="sh-src">
         ${q.source === "site_ai" ? `<span class="chip on">${SRC.site_ai}</span><span>${esc(q.source_model || "")}</span>` : `
@@ -867,7 +925,16 @@ function bindSheet(id) {
   // 答案：贴进来默认是「外部 AI」，手打默认是「自己写」，都可以再改
   const ans = $("#sh-ans", sh);
   let pasted = false;
-  ans.addEventListener("paste", () => { pasted = true; });
+  ans.addEventListener("paste", (e) => {
+    pasted = true;
+    const t = e.clipboardData?.getData("text/plain");
+    if (t && /\*\*|^#{1,6}\s|^\s*[-*]\s|`/m.test(t)) {
+      e.preventDefault();
+      const clean = plainText(t), s0 = ans.selectionStart, s1 = ans.selectionEnd;
+      ans.value = ans.value.slice(0, s0) + clean + ans.value.slice(s1);
+      ans.dispatchEvent(new Event("input"));
+    }
+  });
   ans.onchange = async () => {
     const v = ans.value.trim();
     const patch = { answer: v };
@@ -879,7 +946,7 @@ function bindSheet(id) {
   };
   $("#sh-paste", sh).onclick = async () => {
     try {
-      const t = (await navigator.clipboard.readText()).trim();
+      const t = plainText(await navigator.clipboard.readText());
       if (!t) return toast("剪贴板是空的");
       await patchQ(id, { answer: t, source: "external_ai", source_model: null, verified: false });
       toast("贴好了，来源标为外部 AI");

@@ -3,6 +3,15 @@ import { json, readJson, newId, now } from "../../lib/util.js";
 import { chat, extractJson, activeProviders } from "../../lib/ai.js";
 import { DEFAULT_SETTINGS, fillTemplate } from "../../lib/prompts.js";
 import { hasSearch, webSearch, today } from "../../lib/search.js";
+import { plainText } from "../../lib/text.js";
+
+// 所有回答（火花、课题、联网、不联网）都遵守的格式规则，和模板分开，保证两边一致
+const FORMAT_RULES = `
+
+格式要求（必须遵守）：
+- 只输出纯文本，不要使用任何 Markdown 符号：不要 ** 加粗、不要 # 标题、不要 - 或 * 开头的列表、不要 \` 代码标记
+- 需要分点时，用「1. 2. 3.」或「①②③」开头，每点单独一行
+- 段落之间空一行`;
 
 const DEFAULT_CATEGORIES = [
   ["🏠", "生活常识"],
@@ -102,13 +111,19 @@ async function updateQ(db, id, patch) {
 }
 
 // ---------- AI ----------
-async function aiAnswer(db, env, q, { online = false, request } = {}) {
+async function aiAnswer(db, env, q, opts = {}) {
+  const r = await aiAnswerRaw(db, env, q, opts);
+  return { ...r, text: plainText(r.text) };
+}
+
+async function aiAnswerRaw(db, env, q, { online = false, request } = {}) {
   const s = await getSettings(db);
   let system = s.template_daily;
   if (q.topic_id) {
     const topic = await db.prepare("SELECT * FROM topics WHERE id=?").bind(q.topic_id).first();
     if (topic) system = fillTemplate(s.template_topic, { topic: topic.name, goal: topic.goal });
   }
+  system += FORMAT_RULES;
   // 追问要带上整条来路：从最开始的问题一路问到这里，每一步问了什么、答了什么
   const chain = await ancestors(db, q);
   let user = q.text;
@@ -125,11 +140,11 @@ async function aiAnswer(db, env, q, { online = false, request } = {}) {
   }
   let results = [];
   const query = await searchQuery(env, q, chain, date);
-  if (!query) return aiAnswer(db, env, q, { online: false, request }); // 常识问题不用联网
+  if (!query) return aiAnswerRaw(db, env, q, { online: false, request }); // 常识问题不用联网
   try { results = await webSearch(env, query); }
   catch (e) { console.warn("search failed", e.message); }
   // 搜索额度用完、出错或没搜到，就自动退回不联网回答，不让人卡住
-  if (!results.length) return { ...(await aiAnswer(db, env, q, { online: false, request })), fallback: true };
+  if (!results.length) return { ...(await aiAnswerRaw(db, env, q, { online: false, request })), fallback: true };
   const refs = results.map((r, i) => `[${i + 1}] ${r.title}${r.date ? `（${r.date}）` : ""}\n${r.content}`).join("\n\n");
   system += `\n\n今天是 ${date}。下面是刚刚联网搜索到的资料，请以这些资料为准回答（它们比你自己的知识更新）。
 - 直接给出答案，不要写引用编号，不要列出来源或网址，也不要提到「资料」「搜索结果」这些字眼
@@ -220,7 +235,7 @@ async function aiFollowups(db, env, q) {
 问题：${q.text}
 回答：${q.answer || "（还没有回答）"}`;
   const r = await chat(env, [{ role: "user", content: prompt }], { temperature: 0.8, maxTokens: 400 });
-  return parseList(r.text).slice(0, 3);
+  return parseList(r.text).map(plainText).filter(Boolean).slice(0, 3);
 }
 
 // 模型不一定乖乖输出 JSON（比如漏了引号），先试 JSON，失败就按行/逗号拆开
@@ -367,7 +382,13 @@ export async function onRequest({ request, env, params }) {
         for (const r of all) if (!ids.has(r.id) && r.parent_id && ids.has(r.parent_id)) { ids.add(r.id); grew = true; }
       }
       const t = now();
-      await db.batch([...ids].map((qid) => db.prepare("UPDATE questions SET category_id=?, updated_at=? WHERE id=?").bind(body.category_id || null, t, qid)));
+      // 换分类，或者换课题（topic_id 为 "" 表示放回火花）
+      const stmts = [...ids].map((qid) => "topic_id" in body
+        ? db.prepare("UPDATE questions SET topic_id=?, updated_at=? WHERE id=?").bind(body.topic_id || null, t, qid)
+        : db.prepare("UPDATE questions SET category_id=?, updated_at=? WHERE id=?").bind(body.category_id || null, t, qid));
+      // 整条追问链一起搬时，原来的根问题如果还挂在别处的追问下面，就断开，成为新地方的起点
+      if ("topic_id" in body) stmts.push(db.prepare("UPDATE questions SET parent_id=NULL WHERE id=?").bind(String(body.id)));
+      await db.batch(stmts);
       return json({ ok: true, moved: [...ids] });
     }
     // 批量删除：{ ids: [...], withFollowups: true/false }
