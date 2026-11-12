@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122251";
+const VERSION = "11130039";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -628,7 +628,10 @@ function viewHome() {
     for (const q of roots) (groups[ymd(q.created_at)] ||= []).push(q);
     body = Object.values(groups).map((g) => {
       const [a, b] = dayLabel(g[0].created_at);
-      return `<div class="day"><h2>${a}</h2><span>${b} · ${g.length} 个问题</span></div><div class="list">${g.map((q) => stack(q, shown)).join("")}</div>`;
+      // 一天 = 一幅手卷：卡片贴在卷上，左右滑着看
+      const key = ymd(g[0].created_at);
+      return `<div class="day"><h2>${a}</h2><span>${b} · ${g.length} 个问题</span>${g.length > 1 ? `<span class="roll-pos" data-pos="${key}">1 / ${g.length}</span>` : ""}</div>
+      <div class="roll ${g.length > 1 ? "" : "single"}" data-roll="${key}">${g.map((q) => `<div class="roll-item">${stack(q, shown)}</div>`).join("")}</div>`;
     }).join("");
   }
   return `
@@ -1438,9 +1441,12 @@ function autoGrow(root = document) {
 
 // 手势：在页面上向右滑打开分类，在抽屉上向左滑关上（不从屏幕最边缘开始，避免和手机的返回手势冲突）
 (() => {
-  let sx = 0, sy = 0, tracking = false;
+  let sx = 0, sy = 0, tracking = false, roll = null;
   document.addEventListener("touchstart", (e) => {
     const t = e.touches[0];
+    // 在手卷上横滑是翻卡片；只有卷到头了再往外滑，才切换页面
+    const r = e.target.closest?.(".roll");
+    roll = r && r.scrollWidth > r.clientWidth + 4 ? { start: r.scrollLeft < 4, end: r.scrollLeft + r.clientWidth >= r.scrollWidth - 4 } : null;
     tracking = e.touches.length === 1 && !sheetEl && !winEl && !e.target.closest("canvas, textarea, input, .graph-box");
     sx = t.clientX; sy = t.clientY;
   }, { passive: true });
@@ -1451,6 +1457,7 @@ function autoGrow(root = document) {
     // 抽屉开着时：往左滑关上
     if (UI.drawer) { if (dx < 0) setDrawer(false); return; }
     if (sx < 24 || UI.selecting) return; // 屏幕最边缘留给手机的返回手势
+    if (roll && ((dx < 0 && !roll.end) || (dx > 0 && !roll.start))) return;
     // 左右滑切换「火花 ⇄ 课题 ⇄ 回顾」；在火花再往右滑，拉出左边的分类抽屉
     const PAGES = ["home", "topics", "review"];
     const v = route().view;
@@ -1469,6 +1476,30 @@ function autoGrow(root = document) {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && UI.drawer) setDrawer(false); });
 })();
 
+// 手卷：记住每天卷到了哪里、显示「第几张」，刚答好的卡片自动卷到眼前
+function bindRolls() {
+  UI.rollX ||= {};
+  $$("[data-roll]").forEach((r) => {
+    const key = r.dataset.roll, pos = $(`[data-pos="${key}"]`);
+    const items = $$(".roll-item", r);
+    const update = () => {
+      UI.rollX[key] = r.scrollLeft;
+      if (!pos) return;
+      const mid = r.scrollLeft + r.clientWidth * 0.35;
+      let i = items.findIndex((it) => it.offsetLeft + it.offsetWidth > mid);
+      if (r.scrollLeft + r.clientWidth >= r.scrollWidth - 4) i = items.length - 1;
+      pos.textContent = `${Math.max(0, i) + 1} / ${items.length}`;
+      r.classList.toggle("at-start", r.scrollLeft < 4);
+      r.classList.toggle("at-end", r.scrollLeft + r.clientWidth >= r.scrollWidth - 4);
+    };
+    if (UI.rollX[key]) r.scrollLeft = UI.rollX[key];
+    const fresh = UI.fresh && $(`.card[data-open="${UI.fresh}"]`, r);
+    if (fresh) { const it = fresh.closest(".roll-item"); r.scrollTo({ left: it.offsetLeft - 16, behavior: "smooth" }); }
+    r.addEventListener("scroll", update, { passive: true });
+    update();
+  });
+}
+
 // ---------- 事件绑定 ----------
 function bindCommon() {
   autoGrow();
@@ -1479,6 +1510,7 @@ function bindCommon() {
   $$("[data-close-drawer]").forEach((a) => (a.onclick = () => { UI.drawer = false; if (a.hasAttribute("data-new-topic")) editingTopic = "new"; if (location.hash === a.getAttribute("href")) { setDrawer(false); render(); } }));
   const dbg = $("#drawer-bg"); if (dbg) dbg.onclick = () => setDrawer(false);
   if (UI.drawer) setDrawer(true);
+  bindRolls();
   if (UI.fresh) setTimeout(() => { UI.fresh = null; }, 50);
   $$("form.capture:not(#sh-follow)").forEach((f) => {
     f.onsubmit = (e) => { e.preventDefault(); submitCapture(f, e.submitter?.dataset.mode || "save"); };

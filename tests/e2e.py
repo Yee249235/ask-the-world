@@ -20,6 +20,7 @@ def check(name, ok, detail=""):
     print(("✅" if ok else "❌"), name, ("— " + detail) if detail and not ok else "")
 
 async def long_press(pg, el):
+    await el.scroll_into_view_if_needed(); await pg.wait_for_timeout(300)
     bb = await el.bounding_box()
     await pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + min(30, bb["height"] / 2))
     await pg.mouse.down(); await pg.wait_for_timeout(700); await pg.mouse.up(); await pg.wait_for_timeout(300)
@@ -200,6 +201,25 @@ async def main():
         await pg.goto(BASE + "/#/stats"); await pg.wait_for_timeout(500)
         check("统计：柱状图画出来了", await pg.locator(".chart-wrap .bar").count() > 0)
         await no_overflow(pg, "统计页")
+
+        # ---------- 手卷 ----------
+        for t in ["手卷测试一", "手卷测试二", "手卷测试三"]:
+            await pg.evaluate(f"fetch('/api/questions',{{method:'POST',headers:{{'content-type':'application/json'}},body:JSON.stringify({{text:'{t}'}})}})")
+        await pg.goto(BASE + "/#/"); await pg.reload(); await pg.wait_for_timeout(1200)
+        await pg.click("#menu-btn"); await pg.locator(".dr-item[data-cat=all]").click(); await pg.wait_for_timeout(400)
+        roll = pg.locator(".roll:not(.single)").first
+        check("手卷：同一天的问题排成一卷", await roll.count() == 1 and await roll.locator(".roll-item").count() >= 3)
+        await roll.scroll_into_view_if_needed(); bb = await roll.bounding_box()
+        y = bb["y"] + bb["height"] / 2
+        await pg.evaluate("document.querySelector('.roll:not(.single)').scrollLeft = 0"); await pg.wait_for_timeout(200)
+        await swipe(pg, -200, y=y); await pg.wait_for_timeout(500)
+        check("手卷：在卷上横滑不会切页面", route_ok := (await pg.evaluate("location.hash")) in ("", "#/"))
+        await pg.evaluate("const r=document.querySelector('.roll:not(.single)'); r.scrollLeft = r.scrollWidth"); await pg.wait_for_timeout(500)
+        pos = await pg.locator(".roll-pos").first.inner_text()
+        check("手卷：右上角显示第几张", pos.split("/")[0].strip() == pos.split("/")[1].strip(), pos)
+        await swipe(pg, -200, y=y); await pg.wait_for_timeout(700)
+        check("手卷：卷到头再滑，才切到课题", "topics" in await pg.evaluate("location.hash"))
+        await pg.goto(BASE + "/#/"); await pg.wait_for_timeout(500)
 
         # ---------- 开窗 ----------
         await pg.goto(BASE + "/#/"); await pg.wait_for_timeout(500)
