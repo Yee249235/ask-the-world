@@ -104,23 +104,23 @@ async function aiAnswer(db, env, q, { online = false, request } = {}) {
     system += `\n\n今天是 ${date}。你的知识有截止时间，可能不知道最近发生的事。如果问题涉及最新消息、现任人物、价格、比赛结果等会变化的事，不要断言「没有发生」，而是说明你的信息可能过时，建议用「联网回答」确认。`;
     return chat(env, [{ role: "system", content: system }, { role: "user", content: user }]);
   }
-  const results = await webSearch(env, q.text);
-  if (!results.length) throw new Error("联网搜索没有找到结果，换个说法试试");
+  let results = [];
+  try { results = await webSearch(env, q.text); }
+  catch (e) { console.warn("search failed", e.message); }
+  // 搜索额度用完、出错或没搜到，就自动退回不联网回答，不让人卡住
+  if (!results.length) return { ...(await aiAnswer(db, env, q, { online: false, request })), fallback: true };
   const refs = results.map((r, i) => `[${i + 1}] ${r.title}${r.date ? `（${r.date}）` : ""}\n${r.content}`).join("\n\n");
   system += `\n\n今天是 ${date}。下面是刚刚联网搜索到的资料，请以这些资料为准回答（它们比你自己的知识更新）。
-- 用 [1] [2] 这样的编号标出依据来自哪条资料
+- 直接给出答案，不要写引用编号，不要列出来源或网址
 - 资料之间有矛盾，或者只是传闻、尚未证实，要直接说明
 - 资料里找不到答案就照实说，不要编造`;
   const r = await chat(env, [
     { role: "system", content: system },
     { role: "user", content: `${user}\n\n—— 搜索资料 ——\n${refs}` },
   ], { maxTokens: 900 });
-  // 只列出回答里真正引用到的来源
-  const used = results.filter((_, i) => r.text.includes(`[${i + 1}]`));
-  // 网址里的 %E8%87%AA… 还原成中文，短一些也好读
-  const pretty = (u) => { try { return decodeURI(u); } catch { return u; } };
-  const list = (used.length ? used : results.slice(0, 3)).map((x) => `[${results.indexOf(x) + 1}] ${x.title}\n${pretty(x.url)}`).join("\n");
-  return { ...r, text: `${r.text}\n\n来源：\n${list}`, online: true };
+  // 不显示引用：去掉模型偶尔还是会写的 [1] 编号和来源列表
+  const text = r.text.replace(/\s*\[\d+(?:[,，、\s]*\d+)*\]/g, "").replace(/\n+\s*(来源|参考|资料来源)[:：][\s\S]*$/, "").trim();
+  return { ...r, text, online: true };
 }
 
 async function aiClassify(db, env, q) {
@@ -417,7 +417,7 @@ export async function onRequest({ request, env, params }) {
         const updated = await updateQ(db, q.id, {
           answer: r.text, source: "site_ai", source_model: `${r.provider} · ${r.model}${r.online ? " · 🌐 联网" : ""}`, verified: false,
         });
-        return json(updated);
+        return json(r.fallback && body.online ? { ...updated, _note: "联网搜索暂时用不了，这次是不联网回答的" } : updated);
       }
       if (seg[1] === "classify") {
         const q = await getQ(db, body.id);

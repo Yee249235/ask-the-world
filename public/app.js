@@ -73,6 +73,29 @@ function copyQuestion(q) {
   copyText(text);
 }
 
+const onlineFirst = () => S.search && S.settings.answer_online !== "0";
+function answerButtons(busy) {
+  const web = `<button class="btn small ${onlineFirst() ? "teal" : "ghost"} ${S.search ? "" : "off"}" id="sh-web" ${busy.answer ? "disabled" : ""}>${busy.answer === "web" ? `<span class="spin">🌐</span> 搜索中…` : onlineFirst() ? "🌐 AI 回答" : "🌐 联网"}</button>`;
+  const local = `<button class="btn small ${onlineFirst() ? "ghost" : "brass"}" id="sh-ai" ${busy.answer ? "disabled" : ""}>${busy.answer === "local" ? `<span class="spin">✨</span> 思考中…` : onlineFirst() ? "不联网" : "✨ AI 回答"}</button>`;
+  return onlineFirst() ? web + local : local + web;
+}
+
+// 记下问题后马上在后台回答
+async function answerInBackground(id) {
+  UI.answering ||= new Set();
+  UI.answering.add(id);
+  keepScroll(render);
+  try {
+    const q = await api("ai/answer", { method: "POST", body: { id, online: onlineFirst() } });
+    if (q._note) toast(q._note);
+    delete q._note;
+    upsertQ(q);
+    toast("答好了 💡 点开看看");
+  } catch (e) { toast(e.message.slice(0, 90)); }
+  UI.answering.delete(id);
+  if (sheetEl && route().id === id) refreshSheet(id); else keepScroll(render);
+}
+
 // 答案里出现的网址，在框下面列成可以点的链接
 function linksIn(text) {
   const urls = [...new Set(String(text || "").match(/https?:\/\/[^\s<>"'）)]+/g) || [])].slice(0, 8);
@@ -269,25 +292,29 @@ function captureBox({ topicId = null, placeholder = "冒出一个问题？先记
     ${pick}
     <div class="row">
       <span class="hint"></span>
-      <button class="btn primary">记下 ✍️</button>
+      <span class="bar">
+        <button class="btn" data-mode="save">先记下</button>
+        ${hasAI() ? `<button class="btn primary" data-mode="answer">${onlineFirst() ? "🌐" : "✨"} 记下并回答</button>` : `<button class="btn primary" data-mode="save">记下 ✍️</button>`}
+      </span>
     </div>
   </form>`;
 }
 
-async function submitCapture(form) {
+async function submitCapture(form, mode = "save") {
   const text = form.text.value.trim();
-  if (!text) return;
+  if (!text) return form.text.focus();
   const topicId = form.dataset.topic || null;
-  const btn = form.querySelector("button");
-  btn.disabled = true;
+  const btns = $$("[data-mode]", form);
+  btns.forEach((b) => (b.disabled = true));
   try {
     const q = await api("questions", { method: "POST", body: { text, context: form.context.value.trim(), topic_id: topicId, category_id: topicId ? null : UI.pickCat || null } });
     upsertQ(q);
     form.reset();
-    toast("记下了 🌱");
+    toast(mode === "answer" ? "记下了，正在回答…" : "记下了 🌱");
     render();
+    if (mode === "answer" && hasAI()) answerInBackground(q.id);
   } catch (e) { toast(e.message); }
-  btn.disabled = false;
+  btns.forEach((b) => (b.disabled = false));
 }
 
 async function classify(id) {
@@ -313,11 +340,11 @@ function card(q, { deck = 0, open = false } = {}) {
       <span class="time">${hm(q.created_at)}</span>
     </div>
     <h3>${esc(q.text)}</h3>
-    ${q.answer ? `<p class="ans">${esc(q.answer)}</p>` : `<p class="ans none">🌱 还没有答案</p>`}
+    ${UI.answering?.has(q.id) ? `<p class="ans none"><span class="spin">${onlineFirst() ? "🌐" : "✨"}</span> 正在回答…</p>` : q.answer ? `<p class="ans">${esc(q.answer)}</p>` : `<p class="ans none">🌱 还没有答案</p>`}
     <div class="foot">
       ${p ? `<span>↖ 追问自「${esc(p.text.slice(0, 18))}${p.text.length > 18 ? "…" : ""}」</span>` : ""}
       ${deck ? "" : kids ? `<span>↳ ${kids} 个追问</span>` : ""}
-      ${q.answer && q.source ? `<span>${SRC[q.source]}${q.verified ? " · ✅" : ""}</span>` : ""}
+      ${q.answer && q.source ? `<span>${q.source === "site_ai" && /联网/.test(q.source_model || "") ? "🌐 联网 AI" : SRC[q.source]}${q.verified ? " · ✅" : ""}</span>` : ""}
     </div>
     ${suggestBar(q)}
     ${deck ? `<button class="deck-toggle" data-deck="${q.id}" aria-expanded="${open}">🌿 ${deck} 个追问 <span class="chev">${open ? "收起 ▴" : "展开 ▾"}</span></button>` : ""}
@@ -571,7 +598,8 @@ function viewSettings() {
   </div>
   <div class="panel">
     <h3>🌐 联网回答</h3>
-    ${S.search ? `<p>已开启。问题旁边会多一个「🌐 联网回答」，先上网搜最新资料再回答，并附上来源链接。适合新闻、热点、现任人物、价格这类会变的事。</p>`
+    ${S.search ? `<p>已开启。联网时会先上网搜最新资料再回答，适合新闻、热点、现任人物、价格这类会变的事。免费额度每月 1000 次，用完会自动改成不联网回答，不会收费。</p>
+      <label class="verify" style="margin:0"><input type="checkbox" id="set-online" ${S.settings.answer_online !== "0" ? "checked" : ""} /> 回答时默认先联网</label>`
       : `<p>还没开启。站内 AI 的知识有截止时间，不知道最近发生的事。在 Cloudflare 的环境变量里加上 <code>TAVILY_API_KEY</code>（免费，每月 1000 次）就能联网。</p>`}
   </div>
   <form class="panel" id="tpl-form">
@@ -639,8 +667,7 @@ function sheetHTML(q) {
     <div class="field">
       <div class="bar space"><span class="label" style="margin:0">答案</span>
         <span class="bar">
-          ${hasAI() ? `<button class="btn small brass" id="sh-ai" ${busy.answer ? "disabled" : ""}>${busy.answer === "local" ? `<span class="spin">✨</span> 思考中…` : "✨ 站内 AI"}</button>` : ""}
-          ${hasAI() ? `<button class="btn small teal ${S.search ? "" : "off"}" id="sh-web" ${busy.answer ? "disabled" : ""} title="先上网搜索最新资料再回答，适合新闻、热点、现任人物、价格">${busy.answer === "web" ? `<span class="spin">🌐</span> 搜索中…` : "🌐 联网回答"}</button>` : ""}
+          ${hasAI() ? answerButtons(busy) : ""}
           <button class="btn small" id="sh-paste">📥 贴进来</button>
         </span></div>
       <textarea class="textarea" id="sh-ans" placeholder="写下答案，或者贴进来" style="margin-top:8px">${esc(q.answer)}</textarea>
@@ -784,7 +811,12 @@ function bindSheet(id) {
   const ask = (btn, online) => async () => {
     if (q().answer && btn.dataset.sure !== "1") { btn.dataset.sure = "1"; btn.textContent = "会覆盖现在的答案，再点一次"; return; }
     UI.busy[id] = { ...UI.busy[id], answer: online ? "web" : "local" }; refreshSheet(id);
-    try { upsertQ(await api("ai/answer", { method: "POST", body: { id, online } })); }
+    try {
+      const r = await api("ai/answer", { method: "POST", body: { id, online } });
+      if (r._note) toast(r._note);
+      delete r._note;
+      upsertQ(r);
+    }
     catch (e) { toast(e.message.slice(0, 90)); }
     UI.busy[id] = { ...UI.busy[id], answer: false }; refreshSheet(id);
   };
@@ -1202,8 +1234,8 @@ function autoGrow(root = document) {
 function bindCommon() {
   autoGrow();
   $$("form.capture:not(#sh-follow)").forEach((f) => {
-    f.onsubmit = (e) => { e.preventDefault(); submitCapture(f); };
-    f.text.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitCapture(f); };
+    f.onsubmit = (e) => { e.preventDefault(); submitCapture(f, e.submitter?.dataset.mode || "save"); };
+    f.text.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitCapture(f, hasAI() ? "answer" : "save"); };
   });
   // 长按分类标签可以改名
   $$("[data-cat], [data-pick]").forEach((el) => {
@@ -1372,6 +1404,8 @@ function bindCommon() {
     };
     $("#tpl-reset").onclick = async () => { S.settings = await api("settings/reset", { method: "POST" }); render(); toast("已恢复默认模板"); };
   }
+  const so = $("#set-online");
+  if (so) so.onchange = async () => { S.settings = await api("settings", { method: "PUT", body: { answer_online: so.checked ? "1" : "0" } }); toast(so.checked ? "默认联网回答" : "默认不联网回答"); };
   const lo = $("#logout"); if (lo) lo.onclick = async () => { await api("logout", { method: "POST" }); renderLogin(); };
 }
 
