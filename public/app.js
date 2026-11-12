@@ -8,7 +8,12 @@ const app = $("#app");
 const S = { categories: [], topics: [], questions: [], links: [], settings: {}, providers: [] };
 const UI = { cat: "all", onlyOpen: false, ideas: {}, busy: {} };
 
-const EMOJIS = ["🏠", "🍳", "📱", "💻", "🎮", "📚", "🔭", "🔍", "🧭", "🌱", "🧪", "🎨", "🎵", "🏃", "💰", "✈️", "🐱", "🌍", "🧠", "💡", "🛠️", "🚗", "🩺", "🌙"];
+const EMOJIS = [
+  "🏠", "🍳", "📱", "💻", "🎮", "📚", "🔭", "🔍", "🧭", "💡", "🧠", "🌍",
+  "🍉", "🍎", "🍜", "☕", "🍰", "🥬", "🐱", "🐶", "🌱", "🌸", "🌙", "☀️",
+  "🧪", "🔬", "🎨", "🎵", "🎬", "📷", "✈️", "🚗", "🏃", "⚽", "💰", "📈",
+  "🛠️", "⚙️", "🩺", "💊", "👕", "🧹", "🛒", "🎁", "❤️", "😴", "🤔", "✨",
+];
 const SRC = { site_ai: "✨ 站内 AI", external_ai: "🌐 外部 AI", self: "✍️ 自己写" };
 
 // ---------- 工具 ----------
@@ -123,9 +128,9 @@ function openCatSheet(id) {
   if (!c) return;
   const bg = document.createElement("div");
   bg.className = "sheet-bg";
-  bg.innerHTML = `<form class="sheet move-sheet" role="dialog" aria-label="修改分类">
+  bg.innerHTML = `<form class="sheet move-sheet" role="dialog" aria-label="修改分类" data-cat-id="${id}">
     <div class="sheet-head"><b>修改分类</b><button type="button" class="btn small ghost" data-x>取消</button></div>
-    <div class="bar"><input class="input emo" name="emoji" value="${esc(c.emoji)}" maxlength="4" aria-label="emoji" style="width:64px;text-align:center;font-size:22px" />
+    <div class="bar"><input class="input emo" name="emoji" value="${esc(c.emoji)}" aria-label="emoji，可以用键盘输入任意表情" autocomplete="off" style="width:64px;text-align:center;font-size:22px" />
       <input class="input" name="name" value="${esc(c.name)}" maxlength="12" style="flex:1" aria-label="分类名字" /></div>
     ${emojiPicker("emoji", c.emoji)}
     <div class="bar space" style="margin-top:12px"><a href="#/cats" class="muted" style="font-size:13px" data-x>管理全部分类</a>
@@ -138,7 +143,7 @@ function openCatSheet(id) {
   bg.onclick = (e) => {
     if (e.target === bg || e.target.closest("[data-x]")) return close();
     const em = e.target.closest("[data-emo]");
-    if (em) { f.emoji.value = em.dataset.emo; $$("[data-emo]", bg).forEach((x) => x.classList.toggle("on", x === em)); }
+    if (em) { f.emoji.value = em.dataset.emo; f.emoji.dispatchEvent(new Event("input", { bubbles: true })); }
   };
   f.onsubmit = async (e) => {
     e.preventDefault();
@@ -246,10 +251,10 @@ function captureBox({ topicId = null, placeholder = "冒出一个问题？先记
       <button type="button" class="chip add-cat" data-newcat>＋ 新分类</button>
     </div>
     ${UI.newCatOpen ? `<div class="newcat-row">
-      <input class="input emo" id="nc-emoji" value="🔍" maxlength="4" aria-label="emoji" />
+      <input class="input emo" id="nc-emoji" value="🍉" aria-label="emoji，可以用键盘输入任意表情" autocomplete="off" />
       <input class="input" id="nc-name" placeholder="新分类名，比如：云计算" maxlength="12" style="flex:1" />
       <button type="button" class="btn small primary" id="nc-ok">添加</button>
-    </div>` : ""}`;
+    </div><p class="emo-hint" style="margin-top:4px">左边的框点进去，可以用键盘输入任意 emoji</p>` : ""}`;
   return `
   <form class="capture" data-topic="${topicId || ""}">
     <textarea name="text" rows="2" placeholder="${placeholder}" aria-label="新问题"></textarea>
@@ -429,11 +434,34 @@ function viewHome() {
 // ---------- 分类 ----------
 let editingCat = null;
 function emojiPicker(name, current) {
-  return `<div class="emoji-pick" data-for="${name}">${EMOJIS.map((e) => `<button type="button" class="${e === current ? "on" : ""}" data-emo="${e}">${e}</button>`).join("")}</div>`;
+  return `<p class="emo-hint">点左边的小框，可以用手机键盘输入任意 emoji；也可以直接点下面的</p>
+  <div class="emoji-pick" data-for="${name}">${EMOJIS.map((e) => `<button type="button" class="${e === current ? "on" : ""}" data-emo="${e}">${e}</button>`).join("")}</div>`;
 }
+
+// emoji 输入框：点进去全选，输入后只保留最后一个表情；和别的分类重复时提醒一下
+const seg = typeof Intl !== "undefined" && Intl.Segmenter ? new Intl.Segmenter("zh", { granularity: "grapheme" }) : null;
+function lastGrapheme(v) {
+  const parts = seg ? [...seg.segment(v)].map((x) => x.segment) : Array.from(v);
+  const emo = parts.filter((g) => /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(g));
+  return (emo.length ? emo : parts).filter((g) => g.trim()).pop() || "";
+}
+document.addEventListener("focusin", (e) => { if (e.target.classList?.contains("emo")) setTimeout(() => e.target.select(), 0); });
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (!el.classList?.contains("emo")) return;
+  const g = lastGrapheme(el.value);
+  if (g !== el.value) el.value = g;
+  const form = el.closest("form") || el.parentElement.parentElement;
+  const selfId = form?.dataset?.id || form?.dataset?.catId || "";
+  const dup = S.categories.find((c) => c.emoji === g && c.id !== selfId);
+  let warn = form.querySelector(".emo-dup");
+  if (!warn) { warn = document.createElement("p"); warn.className = "emo-dup"; el.closest(".bar, .newcat-row").after(warn); }
+  warn.textContent = dup ? `和「${dup.emoji} ${dup.name}」用了同一个 emoji，可以用，只是不太好区分` : "";
+  $$(".emoji-pick button", form).forEach((b) => b.classList.toggle("on", b.dataset.emo === g));
+});
 function catForm(c) {
   return `<form class="form-card" id="cat-form" data-id="${c?.id || ""}">
-    <div class="bar"><input class="input emo" name="emoji" value="${esc(c?.emoji || "🔍")}" maxlength="4" aria-label="emoji" />
+    <div class="bar"><input class="input emo" name="emoji" value="${esc(c?.emoji || "🔍")}" aria-label="emoji，可以用键盘输入任意表情" autocomplete="off" />
     <input class="input" name="name" value="${esc(c?.name || "")}" placeholder="分类名称，比如：园艺" style="flex:1" maxlength="12" /></div>
     ${emojiPicker("emoji", c?.emoji)}
     <div class="bar space">
@@ -462,7 +490,7 @@ function viewCats() {
 let editingTopic = null;
 function topicForm(t) {
   return `<form class="form-card" id="topic-form" data-id="${t?.id || ""}">
-    <div class="bar"><input class="input emo" name="emoji" value="${esc(t?.emoji || "🧭")}" maxlength="4" aria-label="emoji" />
+    <div class="bar"><input class="input emo" name="emoji" value="${esc(t?.emoji || "🧭")}" aria-label="emoji，可以用键盘输入任意表情" autocomplete="off" />
     <input class="input" name="name" value="${esc(t?.name || "")}" placeholder="课题名称，比如：做一个自己的网站" style="flex:1" /></div>
     ${emojiPicker("emoji", t?.emoji)}
     <input class="input" name="goal" value="${esc(t?.goal || "")}" placeholder="一句话目标（可不填），比如：年底前上线" />
@@ -1206,8 +1234,9 @@ function bindCommon() {
   // emoji 选择
   $$(".emoji-pick").forEach((p) => p.onclick = (e) => {
     const b = e.target.closest("[data-emo]"); if (!b) return;
-    p.closest("form")[p.dataset.for].value = b.dataset.emo;
-    $$("button", p).forEach((x) => x.classList.toggle("on", x === b));
+    const inp = p.closest("form")[p.dataset.for];
+    inp.value = b.dataset.emo;
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
   // 分类
