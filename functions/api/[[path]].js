@@ -104,7 +104,7 @@ async function aiAnswer(db, env, q, { online = false, request } = {}) {
   if (!online) {
     // 不联网时也告诉模型今天的日期，并提醒它别把过时的知识当成现在的事实
     system += `\n\n今天是 ${date}。你的知识有截止时间，可能不知道最近发生的事。如果问题涉及最新消息、现任人物、价格、比赛结果等会变化的事，不要断言「没有发生」，而是说明你的信息可能过时，建议用「联网回答」确认。`;
-    return chat(env, [{ role: "system", content: system }, { role: "user", content: user }], { avoid: q.answer ? q.source_model || "" : "" });
+    return chat(env, [{ role: "system", content: system }, { role: "user", content: user }], { avoid: q.answer ? q.source_model || "" : "", purpose: "answer", maxTokens: 900 });
   }
   let results = [];
   const query = await searchQuery(env, q, chain, date);
@@ -121,7 +121,7 @@ async function aiAnswer(db, env, q, { online = false, request } = {}) {
   const r = await chat(env, [
     { role: "system", content: system },
     { role: "user", content: `${user}\n\n—— 搜索资料 ——\n${refs}` },
-  ], { maxTokens: 900, avoid: q.answer ? q.source_model || "" : "" });
+  ], { maxTokens: 1000, avoid: q.answer ? q.source_model || "" : "", purpose: "answer" });
   // 不显示引用：去掉模型偶尔还是会写的 [1] 编号和来源列表
   const text = r.text.replace(/\s*\[\d+(?:[,，、\s]*\d+)*\]/g, "").replace(/\n+\s*(来源|参考|资料来源)[:：][\s\S]*$/, "").trim();
   return { ...r, text, online: true };
