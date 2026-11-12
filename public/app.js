@@ -124,9 +124,10 @@ function render() {
     const h = baseHash.replace(/^#\/?/, "").split("/");
     r = { view: h[0] || "home", id: h[1] };
   } else baseHash = location.hash || "#/";
-  const views = { home: viewHome, cats: viewCats, topics: viewTopics, topic: viewTopic, review: viewReview, settings: viewSettings };
+  const views = { home: viewHome, cats: viewCats, topics: viewTopics, topic: viewTopic, review: viewReview, stats: viewStats, settings: viewSettings };
   const fn = views[r.view] || viewHome;
-  const active = r.view === "topic" ? "topics" : r.view === "cats" ? "home" : r.view;
+  if (r.view === "open") { UI.onlyOpen = true; UI.cat = "all"; location.replace("#/"); return; }
+  const active = r.view === "topic" ? "topics" : r.view === "cats" ? "home" : r.view === "stats" ? "review" : r.view;
   if (graph) graph.stop();
   app.innerHTML = shell(fn(r), active);
   bindCommon();
@@ -628,20 +629,38 @@ function bindSheet(id) {
 
 // ---------- 回顾：网络图 ----------
 let graph = null;
+
+// 网络图上显示的短标签：优先用 AI 缩写，没有就从问题里截几个字
+const STRIP_HEAD = /^(为什么|为啥|怎么样|怎么|如何|什么是|什么叫|是不是|能不能|可不可以|有没有|请问|到底)/;
+function shortLabel(q) {
+  if (q.short) return q.short;
+  const t = q.text.replace(/[？?！!。，,\s]+$/g, "").replace(STRIP_HEAD, "").replace(/(吗|呢|啊)$/, "");
+  return t.length > 5 ? t.slice(0, 5) + "…" : t || q.text.slice(0, 5);
+}
+
+function statTile(href, num, label) {
+  return `<a class="stat link" href="${href}"><b>${num}</b><span>${label} ›</span></a>`;
+}
+
 function viewReview() {
   const weekAgo = Date.now() - 7 * 864e5;
   const n = S.questions.length;
+  const missingShort = S.questions.some((q) => !q.short);
   return `
-  <section class="hero"><div class="deco" aria-hidden="true">🕸 🔭 ✨</div><h1>回顾</h1>
-  <p class="muted" style="margin:0">你的好奇心长成了什么样子。点一个点就能打开那个问题。</p></section>
+  <section class="hero"><div class="deco" aria-hidden="true">🕸 🔭 ✨</div><h1>回顾</h1></section>
   <div class="stats">
-    <div class="stat"><b>${n}</b><span>个问题</span></div>
-    <div class="stat"><b>${S.questions.filter((q) => q.created_at > weekAgo).length}</b><span>本周新问题</span></div>
-    <div class="stat"><b>${S.questions.filter((q) => !q.answer).length}</b><span>还没答案</span></div>
-    <div class="stat"><b>${S.questions.filter((q) => q.parent_id).length}</b><span>次追问</span></div>
+    ${statTile("#/stats", n, "个问题")}
+    ${statTile("#/stats", S.questions.filter((q) => q.created_at > weekAgo).length, "本周新问题")}
+    ${statTile("#/open", S.questions.filter((q) => !q.answer).length, "还没答案")}
+    ${statTile("#/stats", S.questions.filter((q) => q.parent_id).length, "次追问")}
   </div>
-  ${n ? `<div class="graph-box" id="gbox"><canvas id="gc"></canvas><div class="graph-tip" id="gtip"></div></div>
-  <div class="legend"><span><i></i>追问</span><span><i class="faint"></i>同一课题</span><span><i class="dash"></i>AI 发现的关联</span></div>` :
+  ${n ? `<div class="graph-box" id="gbox">
+      <canvas id="gc" aria-label="好奇心网络图：拖动旋转，双指缩放，点一个点查看问题"></canvas>
+      <div class="graph-hint">拖动旋转 · 双指缩放 · 点一下看问题</div>
+      <div class="graph-tip" id="gtip"></div>
+    </div>
+  <div class="legend"><span><i></i>追问</span><span><i class="faint"></i>同一课题</span><span><i class="dash"></i>AI 发现的关联</span><span>○ 未解答 ● 已解答</span></div>
+  ${hasAI() && missingShort ? `<p class="muted" style="font-size:13px;margin:6px 0 0" id="short-note">✨ 正在让 AI 把问题缩成几个字的标签…</p>` : ""}` :
   `<div class="empty"><span class="big">🕸</span>记下几个问题后，这里会长出你的好奇心网络</div>`}
   ${hasAI() && n >= 3 ? `<div class="panel"><h3>🔍 找找隐藏的关联</h3><p>让 AI 看看你不同时间问过的问题，有没有其实相通的。它只是建议，不对可以删掉。</p>
     <button class="btn brass" id="relate">开始寻找</button></div>` : ""}
@@ -653,25 +672,45 @@ function viewReview() {
   <div style="height:40px"></div>`;
 }
 
+// 缺短标签的问题，进回顾页时让 AI 一次性补上（只补缺的，补过就不再花额度）
+let shortening = false;
+async function fillShorts() {
+  if (shortening || !hasAI() || !S.questions.some((q) => !q.short)) return;
+  shortening = true;
+  try {
+    const { items } = await api("ai/shorten", { method: "POST" });
+    for (const [id, short] of Object.entries(items || {})) { const q = qOf(id); if (q) q.short = short; }
+    if (graph) graph.relabel();
+  } catch (e) { console.warn("shorten", e); }
+  shortening = false;
+  const note = $("#short-note"); if (note) note.remove();
+}
+
 function catColor(id) {
   const palette = ["#b4741a", "#1d7a76", "#6a5acd", "#c0504d", "#4f8a3a", "#2f6db5", "#a0527a", "#7a7a2a"];
   const i = S.categories.findIndex((c) => c.id === id);
   return i < 0 ? "#8f99b5" : palette[i % palette.length];
 }
 
+// 3D 球形网络：节点在三维空间里做力导向布局，投影到画布上，可以 360° 旋转
 function startGraph() {
   const box = $("#gbox");
   if (!box) return;
   const cv = $("#gc"), ctx = cv.getContext("2d"), tip = $("#gtip");
   const css = getComputedStyle(document.documentElement);
-  const col = { ink: css.getPropertyValue("--ink").trim(), line: css.getPropertyValue("--line").trim(), brass: css.getPropertyValue("--brass").trim(), teal: css.getPropertyValue("--teal").trim(), paper: css.getPropertyValue("--paper").trim() };
+  const col = (v) => css.getPropertyValue(v).trim();
+  const C = { ink: col("--ink"), muted: col("--muted"), line: col("--line"), brass: col("--brass"), teal: col("--teal"), paper: col("--paper") };
+  const font = getComputedStyle(document.body).fontFamily;
   let W, H, dpr;
   const resize = () => { dpr = devicePixelRatio || 1; W = box.clientWidth; H = box.clientHeight; cv.width = W * dpr; cv.height = H * dpr; };
   resize();
 
+  // 初始位置：均匀撒在球面上（斐波那契球）
+  const N = S.questions.length;
+  const R0 = 60 + Math.sqrt(N) * 18;
   const nodes = S.questions.map((q, i) => {
-    const a = i * 2.399, r = 30 + Math.sqrt(i) * 22; // 向日葵式初始分布，像一个球
-    return { q, x: W / 2 + Math.cos(a) * r, y: H / 2 + Math.sin(a) * r, vx: 0, vy: 0, deg: 0 };
+    const y = 1 - (2 * (i + 0.5)) / N, r = Math.sqrt(1 - y * y), th = i * 2.399963;
+    return { q, x: Math.cos(th) * r * R0, y: y * R0, z: Math.sin(th) * r * R0, vx: 0, vy: 0, vz: 0, deg: 0, label: shortLabel(q) };
   });
   const byId = Object.fromEntries(nodes.map((n) => [n.q.id, n]));
   const edges = [];
@@ -683,94 +722,253 @@ function startGraph() {
   for (const l of S.links) if (byId[l.a] && byId[l.b]) edges.push({ a: byId[l.a], b: byId[l.b], k: "ai" });
   edges.forEach((e) => { e.a.deg++; e.b.deg++; });
 
-  let view = { x: 0, y: 0, s: 1 }, drag = null, hover = null, running = true, alpha = 1;
-  const rad = (n) => 5 + Math.min(n.deg, 6) * 1.6;
+  let rotY = 0.4, rotX = -0.25, zoom = 1, panX = 0, panY = 0, alpha = 1, running = true;
+  let autoSpin = !matchMedia("(prefers-reduced-motion: reduce)").matches, lastTouch = 0, selected = null;
+  const rad = (n) => 4 + Math.min(n.deg, 6) * 1.3;
 
   function step() {
-    if (alpha < 0.005) return;
-    alpha *= 0.985;
-    for (let i = 0; i < nodes.length; i++) {
+    if (alpha < 0.003) return;
+    alpha *= 0.99;
+    for (let i = 0; i < N; i++) {
       const a = nodes[i];
-      for (let j = i + 1; j < nodes.length; j++) {
+      for (let j = i + 1; j < N; j++) {
         const b = nodes[j];
-        let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy + 0.01;
-        if (d2 > 90000) continue;
-        const f = (900 / d2) * alpha;
-        dx *= f; dy *= f;
-        a.vx += dx; a.vy += dy; b.vx -= dx; b.vy -= dy;
+        let dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z, d2 = dx * dx + dy * dy + dz * dz + 0.01;
+        if (d2 > 160000) continue;
+        const f = (260 / d2) * alpha;
+        a.vx += dx * f; a.vy += dy * f; a.vz += dz * f; b.vx -= dx * f; b.vy -= dy * f; b.vz -= dz * f;
       }
-      // 向中心的引力，让整体保持成一团
-      a.vx += (W / 2 - a.x) * 0.004 * alpha;
-      a.vy += (H / 2 - a.y) * 0.004 * alpha;
+      // 拉回球壳附近，整体保持成一个球
+      const d = Math.hypot(a.x, a.y, a.z) || 1, pull = ((d - R0) / d) * 0.03;
+      a.vx -= a.x * pull; a.vy -= a.y * pull; a.vz -= a.z * pull;
     }
     for (const e of edges) {
-      const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, d = Math.hypot(dx, dy) || 1;
-      const target = e.k === "parent" ? 46 : e.k === "ai" ? 80 : 70;
-      const f = ((d - target) / d) * 0.05 * alpha * (e.k === "topic" ? 0.5 : 1);
-      e.a.vx += dx * f; e.a.vy += dy * f; e.b.vx -= dx * f; e.b.vy -= dy * f;
+      const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, dz = e.b.z - e.a.z, d = Math.hypot(dx, dy, dz) || 1;
+      const target = e.k === "parent" ? 40 : e.k === "ai" ? 70 : 60;
+      const f = ((d - target) / d) * 0.04 * alpha * (e.k === "topic" ? 0.5 : 1);
+      e.a.vx += dx * f; e.a.vy += dy * f; e.a.vz += dz * f; e.b.vx -= dx * f; e.b.vy -= dy * f; e.b.vz -= dz * f;
     }
     for (const n of nodes) {
-      if (n === drag?.node) continue;
-      n.vx *= 0.82; n.vy *= 0.82; n.x += n.vx; n.y += n.vy;
+      n.vx *= 0.8; n.vy *= 0.8; n.vz *= 0.8;
+      const v = Math.hypot(n.vx, n.vy, n.vz);
+      if (v > 6) { n.vx *= 6 / v; n.vy *= 6 / v; n.vz *= 6 / v; } // 限速，避免炸开
+      n.x += n.vx; n.y += n.vy; n.z += n.vz;
     }
   }
+
+  // 旋转 + 透视投影
+  function project() {
+    const cy = Math.cos(rotY), sy = Math.sin(rotY), cx = Math.cos(rotX), sx = Math.sin(rotX);
+    let rMax = 1;
+    for (const n of nodes) rMax = Math.max(rMax, Math.hypot(n.x, n.y, n.z));
+    const fov = rMax * 4, scale = (Math.min(W, H) / (rMax * 2.7)) * zoom;
+    for (const n of nodes) {
+      const x1 = n.x * cy - n.z * sy, z1 = n.x * sy + n.z * cy;
+      const y2 = n.y * cx - z1 * sx, z2 = n.y * sx + z1 * cx;
+      const p = fov / (fov + z2);
+      n.sx = W / 2 + panX + x1 * p * scale;
+      n.sy = H / 2 + panY + y2 * p * scale;
+      n.sz = z2; n.sp = p * zoom;
+    }
+  }
+
   function draw() {
+    project();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.translate(view.x, view.y); ctx.scale(view.s, view.s);
+    const zs = nodes.map((n) => n.sz), zMin = Math.min(...zs), zMax = Math.max(...zs), zr = zMax - zMin || 1;
+    const fade = (n) => 0.25 + 0.75 * (1 - (n.sz - zMin) / zr); // 近的清楚，远的淡
     for (const e of edges) {
-      ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y);
+      ctx.globalAlpha = Math.min(fade(e.a), fade(e.b));
+      ctx.beginPath(); ctx.moveTo(e.a.sx, e.a.sy); ctx.lineTo(e.b.sx, e.b.sy);
       ctx.setLineDash(e.k === "ai" ? [5, 4] : []);
-      ctx.strokeStyle = e.k === "parent" ? col.brass : e.k === "ai" ? col.teal : col.line;
+      ctx.strokeStyle = e.k === "parent" ? C.brass : e.k === "ai" ? C.teal : C.line;
       ctx.lineWidth = e.k === "topic" ? 1 : 1.6;
       ctx.stroke();
     }
     ctx.setLineDash([]);
-    for (const n of nodes) {
-      ctx.beginPath(); ctx.arc(n.x, n.y, rad(n), 0, Math.PI * 2);
-      ctx.fillStyle = n.q.answer ? catColor(n.q.category_id) : col.paper;
+    const order = [...nodes].sort((a, b) => b.sz - a.sz); // 远的先画
+    for (const n of order) {
+      const f = fade(n), r = rad(n) * Math.max(0.6, n.sp);
+      ctx.globalAlpha = f;
+      ctx.beginPath(); ctx.arc(n.sx, n.sy, r, 0, Math.PI * 2);
+      ctx.fillStyle = n.q.answer ? catColor(n.q.category_id) : C.paper;
       ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = catColor(n.q.category_id); ctx.stroke();
+      ctx.lineWidth = n === selected ? 3 : 2; ctx.strokeStyle = n === selected ? C.ink : catColor(n.q.category_id); ctx.stroke();
+      if (f > 0.45 || n === selected) {
+        const fs = Math.round(Math.max(10, Math.min(14, 12 * n.sp)));
+        ctx.font = `${n === selected ? 600 : 400} ${fs}px ${font}`;
+        ctx.fillStyle = n === selected ? C.ink : C.muted;
+        ctx.globalAlpha = n === selected ? 1 : f;
+        ctx.fillText(n.label, n.sx + r + 4, n.sy + fs / 3);
+      }
     }
-    if (hover) {
-      ctx.font = "13px " + getComputedStyle(document.body).fontFamily;
-      const label = hover.q.text.length > 22 ? hover.q.text.slice(0, 22) + "…" : hover.q.text;
-      ctx.fillStyle = col.ink;
-      ctx.fillText(label, hover.x + rad(hover) + 4, hover.y + 4);
-    }
+    ctx.globalAlpha = 1;
   }
-  function loop() { if (!running) return; step(); draw(); requestAnimationFrame(loop); }
+
+  function loop() {
+    if (!running) return;
+    step();
+    if (autoSpin && Date.now() - lastTouch > 2500) rotY += 0.0025;
+    draw();
+    requestAnimationFrame(loop);
+  }
   loop();
 
-  const toWorld = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / view.s, y: (e.clientY - r.top - view.y) / view.s }; };
-  const pick = (p) => nodes.find((n) => Math.hypot(n.x - p.x, n.y - p.y) < rad(n) + 8);
+  // ---- 手势：单指拖动旋转，双指缩放+平移，点一下选中 ----
+  const pts = new Map();
+  let downInfo = null, pinch = null;
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const pick = (p) => {
+    let best = null, bd = 1e9;
+    for (const n of nodes) { const d = Math.hypot(n.sx - p.x, n.sy - p.y); if (d < rad(n) * n.sp + 12 && n.sz < bd) { best = n; bd = n.sz; } }
+    return best;
+  };
   cv.onpointerdown = (e) => {
     cv.setPointerCapture(e.pointerId);
-    const p = toWorld(e), n = pick(p);
-    drag = { node: n, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
-    if (n) { hover = n; showTip(n); }
+    pts.set(e.pointerId, pos(e));
+    lastTouch = Date.now();
+    if (pts.size === 1) downInfo = { ...pos(e), rotX, rotY, moved: false, t: Date.now() };
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, panX, panY };
+      if (downInfo) downInfo.moved = true;
+    }
   };
   cv.onpointermove = (e) => {
-    if (!drag) { const n = pick(toWorld(e)); if (n !== hover) { hover = n; draw(); } return; }
-    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 5) drag.moved = true;
-    if (drag.node) { const p = toWorld(e); drag.node.x = p.x; drag.node.y = p.y; alpha = Math.max(alpha, 0.3); }
-    else { view.x = drag.vx + e.clientX - drag.sx; view.y = drag.vy + e.clientY - drag.sy; }
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, pos(e));
+    lastTouch = Date.now();
+    if (pts.size >= 2 && pinch) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      zoom = Math.min(4, Math.max(0.4, pinch.zoom * (d / pinch.d)));
+      panX = pinch.panX + (a.x + b.x) / 2 - pinch.mx;
+      panY = pinch.panY + (a.y + b.y) / 2 - pinch.my;
+    } else if (downInfo) {
+      const p = pos(e), dx = p.x - downInfo.x, dy = p.y - downInfo.y;
+      if (Math.hypot(dx, dy) > 6) downInfo.moved = true;
+      rotY = downInfo.rotY + dx * 0.008;
+      rotX = Math.max(-1.5, Math.min(1.5, downInfo.rotX + dy * 0.008));
+    }
   };
-  cv.onpointerup = () => { if (drag?.node && !drag.moved) openQ(drag.node.q.id); drag = null; };
-  cv.onwheel = (e) => {
-    e.preventDefault();
-    const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-    const k = Math.exp(-e.deltaY * 0.0015), s = Math.min(3, Math.max(0.3, view.s * k));
-    view.x = mx - ((mx - view.x) * s) / view.s; view.y = my - ((my - view.y) * s) / view.s; view.s = s;
+  const up = (e) => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 0 && downInfo) {
+      if (!downInfo.moved) select(pick(pos(e)));
+      downInfo = null;
+    }
   };
-  function showTip(n) {
+  cv.onpointerup = up; cv.onpointercancel = up;
+  cv.onwheel = (e) => { e.preventDefault(); lastTouch = Date.now(); zoom = Math.min(4, Math.max(0.4, zoom * Math.exp(-e.deltaY * 0.0015))); };
+
+  function select(n) {
+    selected = n;
+    if (!n) { tip.style.display = "none"; return; }
     const c = catOf(n.q.category_id);
-    tip.style.display = "block";
-    tip.innerHTML = `${c ? c.emoji + " " : ""}${esc(n.q.text)}`;
+    tip.style.display = "flex";
+    tip.innerHTML = `<span>${c ? c.emoji + " " : ""}${esc(n.q.text)}</span><button class="btn small primary" id="gopen">打开 →</button>`;
+    $("#gopen").onclick = () => openQ(n.q.id);
   }
-  const ro = new ResizeObserver(() => { resize(); });
+
+  const ro = new ResizeObserver(resize);
   ro.observe(box);
-  graph = { stop() { running = false; ro.disconnect(); graph = null; } };
+  graph = {
+    stop() { running = false; ro.disconnect(); graph = null; },
+    relabel() { nodes.forEach((n) => (n.label = shortLabel(n.q))); },
+  };
+  fillShorts();
+}
+
+// ---------- 统计（从回顾里点进来） ----------
+const C_DONE = "var(--c-done)", C_OPEN = "var(--c-open)";
+function viewStats() {
+  const range = UI.range || 30;
+  const DAY = 864e5;
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  const byWeek = range > 31;
+  const bucketMs = byWeek ? 7 * DAY : DAY;
+  const nB = byWeek ? Math.ceil(range / 7) : range;
+  const start = today0.getTime() - (byWeek ? (nB * 7 - 1) : (nB - 1)) * DAY;
+  const buckets = Array.from({ length: nB }, (_, i) => ({ t: start + i * bucketMs, done: 0, open: 0 }));
+  const inRange = S.questions.filter((q) => q.created_at >= start);
+  for (const q of inRange) {
+    const i = Math.min(nB - 1, Math.floor((q.created_at - start) / bucketMs));
+    if (i >= 0) buckets[i][q.answer ? "done" : "open"]++;
+  }
+  const max = Math.max(1, ...buckets.map((b) => b.done + b.open));
+
+  // 连续记录天数（从今天或昨天往前数）
+  const days = new Set(S.questions.map((q) => ymd(q.created_at)));
+  let streak = 0, d = new Date(today0);
+  if (!days.has(ymd(d.getTime()))) d.setDate(d.getDate() - 1);
+  while (days.has(ymd(d.getTime()))) { streak++; d.setDate(d.getDate() - 1); }
+  const activeDays = new Set(inRange.map((q) => ymd(q.created_at))).size;
+  const doneRate = inRange.length ? Math.round((inRange.filter((q) => q.answer).length / inRange.length) * 100) : 0;
+
+  // 柱状图（SVG）
+  const VW = 360, VH = 190, padL = 22, padB = 22, padT = 8, cw = VW - padL - 8, ch = VH - padB - padT;
+  const bw = cw / nB, barW = Math.max(2, Math.min(18, bw - 2));
+  const ticks = max <= 4 ? Array.from({ length: max + 1 }, (_, i) => i) : [0, Math.round(max / 2), max];
+  const yOf = (v) => padT + ch - (v / max) * ch;
+  const lbl = (t) => { const x = new Date(t); return `${x.getMonth() + 1}/${x.getDate()}`; };
+  const every = Math.ceil(nB / 6);
+  const bars = buckets.map((b, i) => {
+    const x = padL + i * bw + (bw - barW) / 2;
+    const hD = (b.done / max) * ch, hO = (b.open / max) * ch;
+    const gap = b.done && b.open ? 2 : 0;
+    const tipText = `${byWeek ? lbl(b.t) + " 那一周" : lbl(b.t)}｜已解答 ${b.done}・待解答 ${b.open}`;
+    return `<g class="bar" data-tip="${tipText}">
+      <rect x="${padL + i * bw}" y="${padT}" width="${bw}" height="${ch}" fill="transparent"/>
+      ${b.done ? `<path d="${roundTop(x, padT + ch - hD, barW, hD, b.open ? 0 : 3)}" style="fill:${C_DONE}"/>` : ""}
+      ${b.open ? `<path d="${roundTop(x, padT + ch - hD - gap - hO, barW, hO, 3)}" style="fill:${C_OPEN}"/>` : ""}
+      ${i % every === nB % every || i === nB - 1 ? `<text x="${x + barW / 2}" y="${VH - 6}" text-anchor="middle" class="ax">${lbl(b.t)}</text>` : ""}
+    </g>`;
+  }).join("");
+  const grid = ticks.map((v) => `<line x1="${padL}" x2="${VW - 8}" y1="${yOf(v)}" y2="${yOf(v)}" class="gl"/><text x="${padL - 6}" y="${yOf(v) + 4}" text-anchor="end" class="ax">${v}</text>`).join("");
+
+  // 分类分布
+  const catCounts = [...S.categories.map((c) => ({ label: `${c.emoji} ${c.name}`, n: inRange.filter((q) => q.category_id === c.id).length })),
+    { label: "📥 未分类", n: inRange.filter((q) => !q.category_id && !q.topic_id).length },
+    { label: "🧭 课题里", n: inRange.filter((q) => q.topic_id && !q.category_id).length }]
+    .filter((x) => x.n).sort((a, b) => b.n - a.n);
+  const catMax = Math.max(1, ...catCounts.map((x) => x.n));
+
+  // 一天里什么时候最好奇
+  const hours = Array(24).fill(0);
+  inRange.forEach((q) => hours[new Date(q.created_at).getHours()]++);
+  const hMax = Math.max(1, ...hours);
+  const peak = hours.indexOf(Math.max(...hours));
+
+  return `
+  <section class="hero"><div><a href="#/review" style="text-decoration:none;font-size:14px">← 回顾</a></div><h1>好奇心的节奏</h1></section>
+  <div class="seg" role="tablist">
+    ${[[7, "7 天"], [30, "30 天"], [90, "3 个月"]].map(([v, l]) => `<button class="${range === v ? "on" : ""}" data-range="${v}">${l}</button>`).join("")}
+  </div>
+  <div class="stats">
+    <div class="stat"><b>${inRange.length}</b><span>个问题</span></div>
+    <div class="stat"><b>${streak}</b><span>天连续在问</span></div>
+    <div class="stat"><b>${activeDays}</b><span>天有提问</span></div>
+    <div class="stat"><b>${doneRate}<small>%</small></b><span>已找到答案</span></div>
+  </div>
+  <div class="panel chart">
+    <div class="bar space"><h3>${byWeek ? "每周" : "每天"}问了多少</h3>
+      <div class="legend" style="margin:0"><span><i class="sw" style="background:${C_DONE}"></i>已解答</span><span><i class="sw" style="background:${C_OPEN}"></i>待解答</span></div></div>
+    <div class="chart-wrap"><svg viewBox="0 0 ${VW} ${VH}" role="img" aria-label="${byWeek ? "每周" : "每天"}提问数量柱状图">${grid}${bars}</svg>
+    <div class="ctip" id="ctip"></div></div>
+  </div>
+  ${catCounts.length ? `<div class="panel chart"><h3>都在好奇什么</h3>
+    <div class="hbars">${catCounts.map((x) => `<div class="hb"><span class="hl">${esc(x.label)}</span><span class="ht"><i style="width:${(x.n / catMax) * 100}%"></i></span><span class="hn">${x.n}</span></div>`).join("")}</div></div>` : ""}
+  ${inRange.length ? `<div class="panel chart"><h3>一天里什么时候最好奇</h3><p>${inRange.length >= 3 ? `你最常在 <b>${peak}:00–${peak + 1}:00</b> 冒出问题` : "多记几个问题，这里会更有意思"}</p>
+    <div class="hours">${hours.map((v, h) => `<div class="hc" title="${h}:00 · ${v} 个"><i style="height:${(v / hMax) * 100}%"></i></div>`).join("")}</div>
+    <div class="hours-ax"><span>0 点</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div>` : ""}
+  <div style="height:40px"></div>`;
+}
+// 顶部圆角、底部贴着基线的柱子
+function roundTop(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
 }
 
 function keepDraft(fn) {
@@ -876,6 +1074,19 @@ function bindCommon() {
       editingTopic = null; go("#/topics");
     };
   }
+
+  // 统计
+  $$("[data-range]").forEach((b) => (b.onclick = () => { UI.range = +b.dataset.range; render(); }));
+  const ctip = $("#ctip");
+  if (ctip) $$(".chart-wrap .bar").forEach((g) => {
+    const show = (e) => {
+      $$(".chart-wrap .bar.hl").forEach((x) => x.classList.remove("hl")); g.classList.add("hl");
+      ctip.textContent = g.dataset.tip; ctip.style.display = "block";
+      const r = g.getBoundingClientRect(), w = g.closest(".chart-wrap").getBoundingClientRect();
+      ctip.style.left = Math.min(w.width - ctip.offsetWidth, Math.max(0, r.left - w.left + r.width / 2 - ctip.offsetWidth / 2)) + "px";
+    };
+    g.onpointerenter = show; g.onclick = show;
+  });
 
   // 回顾
   const rel = $("#relate");

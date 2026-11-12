@@ -12,7 +12,7 @@ const DEFAULT_CATEGORIES = [
   ["🔭", "杂想探索"],
 ];
 
-const Q_FIELDS = ["text", "context", "category_id", "topic_id", "parent_id", "ask_by", "answer", "source", "source_model", "verified", "suggest"];
+const Q_FIELDS = ["short", "text", "context", "category_id", "topic_id", "parent_id", "ask_by", "answer", "source", "source_model", "verified", "suggest"];
 
 // ---------- 数据读取 ----------
 async function getSettings(db) {
@@ -74,6 +74,7 @@ async function updateQ(db, id, patch) {
     sets.push(`${k}=?`);
     vals.push(v ?? null);
   }
+  if ("text" in patch && !("short" in patch)) sets.push("short=NULL");
   if (!sets.length) return getQ(db, id);
   sets.push("updated_at=?");
   vals.push(now(), id);
@@ -156,6 +157,32 @@ function parseList(text) {
     .split(/\n|[,，](?=\s*["“「]?[^,，]{3,})/)
     .map((x) => x.replace(/^[\s\[\]"“”「」'\-*\d.、)）]+|[\s\[\]"“”「」',，]+$/g, "").trim())
     .filter((x) => x.length >= 3 && x.length <= 60);
+}
+
+// 给网络图用的短标签：一次处理一批还没有短标签的问题
+async function aiShorten(db, env) {
+  const { results } = await db.prepare("SELECT id,text FROM questions WHERE short IS NULL OR short='' ORDER BY created_at DESC LIMIT 60").all();
+  if (!results.length) return {};
+  const list = results.map((q, i) => `${i + 1}. ${q.text}`).join("\n");
+  const prompt = `把下面每个问题缩成一个不超过 5 个汉字的短标签，让人一眼认出是哪个问题（抓住核心名词，不要「为什么」「怎么」这类词）。
+只输出 JSON 对象，键是序号，值是标签，例如 {"1":"大火炒菜","2":"云计算"}。
+
+${list}`;
+  const r = await chat(env, [{ role: "user", content: prompt }], { temperature: 0.2, maxTokens: 900 });
+  let obj = {};
+  try { obj = extractJson(r.text); } catch {
+    for (const m of r.text.matchAll(/["“]?(\d+)["”]?\s*[:：.、]\s*["“]?([^"”,，\n]{1,10})/g)) obj[m[1]] = m[2];
+  }
+  const out = {};
+  const stmts = [];
+  results.forEach((q, i) => {
+    let s = String(obj[i + 1] ?? obj[String(i + 1)] ?? "").replace(/["“”\s]/g, "").slice(0, 6);
+    if (!s) return;
+    out[q.id] = s;
+    stmts.push(db.prepare("UPDATE questions SET short=? WHERE id=?").bind(s, q.id));
+  });
+  if (stmts.length) await db.batch(stmts);
+  return out;
 }
 
 async function aiRelate(db, env) {
@@ -344,6 +371,7 @@ export async function onRequest({ request, env, params }) {
         return json({ items: await aiFollowups(db, env, q) });
       }
       if (seg[1] === "relate") return json({ added: await aiRelate(db, env) });
+      if (seg[1] === "shorten") return json({ items: await aiShorten(db, env) });
     } catch (e) {
       return json({ error: e.message || String(e) }, 502);
     }

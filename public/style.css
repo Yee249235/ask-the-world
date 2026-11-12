@@ -284,3 +284,42 @@ a { color: var(--teal); }
 .parent-ctx .pa { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: 13px; margin-top: 2px; }
 details.more { margin-top: 26px; border-top: 1px solid var(--line); padding-top: 10px; }
 details.more summary { cursor: pointer; color: var(--muted); font-size: 13.5px; padding: 4px 0; }
+
+/* 图表用色（已校验色盲可区分） */
+:root { --c-done: #0b8f88; --c-open: #c97d10; }
+@media (prefers-color-scheme: dark) { :root { --c-done: #0b8f88; --c-open: #c27a12; } }
+
+a.stat.link { text-decoration: none; color: inherit; transition: border-color .15s; }
+a.stat.link:hover, a.stat.link:active { border-color: var(--brass); }
+a.stat.link span { color: var(--muted); }
+.stat b small { font-size: 14px; margin-left: 1px; }
+
+.graph-hint { position: absolute; top: 8px; left: 0; right: 0; text-align: center; font-size: 12px; color: var(--muted); pointer-events: none; }
+.graph-tip { align-items: center; gap: 10px; justify-content: space-between; }
+.graph-tip span { flex: 1; }
+
+.seg { display: inline-flex; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 3px; margin-top: 14px; }
+.seg button { border: 0; background: transparent; padding: 5px 14px; border-radius: 999px; cursor: pointer; font-size: 14px; color: var(--muted); }
+.seg button.on { background: var(--ink); color: var(--bg); }
+
+.panel.chart h3 { margin: 0; }
+.chart-wrap { position: relative; margin-top: 10px; }
+.chart-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart-wrap .gl { stroke: var(--line); stroke-width: 1; }
+.chart-wrap .ax { fill: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.chart-wrap .bar { cursor: pointer; }
+.chart-wrap .bar.hl rect:first-child { fill: color-mix(in srgb, var(--ink) 6%, transparent); }
+.ctip { position: absolute; top: -6px; display: none; background: var(--ink); color: var(--bg); font-size: 12.5px; padding: 4px 10px; border-radius: 8px; white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums; }
+.legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; border: 0; margin-right: 4px; vertical-align: -1px; }
+
+.hbars { display: grid; gap: 8px; margin-top: 10px; }
+.hb { display: grid; grid-template-columns: minmax(80px, 30%) 1fr 32px; align-items: center; gap: 10px; font-size: 14px; }
+.hb .hl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hb .ht { height: 10px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+.hb .ht i { display: block; height: 100%; background: var(--c-done); border-radius: 99px; }
+.hb .hn { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.hours { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 90px; align-items: end; margin-top: 8px; }
+.hours .hc { height: 100%; display: flex; align-items: flex-end; background: var(--bg); border-radius: 3px; }
+.hours .hc i { display: block; width: 100%; background: var(--c-done); border-radius: 3px 3px 0 0; min-height: 0; }
+.hours-ax { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
