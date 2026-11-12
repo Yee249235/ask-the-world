@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122126";
+const VERSION = "11122133";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -259,10 +259,49 @@ function shell(inner, active) {
   const tabs = [["home", "#/", "✨ 火花"], ["topics", "#/topics", "🧭 课题"], ["review", "#/review", "🕸 回顾"], ["settings", "#/settings", "⚙️"]];
   return `
   <header class="top"><div class="wrap">
-    <a class="brand" href="#/"><b>问世界</b><small>Ask the World</small></a>
+    <div class="brand-row">
+      <button class="menu-btn" id="menu-btn" aria-label="打开分类" aria-controls="drawer" aria-expanded="false"><span></span><span></span><span></span></button>
+      <a class="brand" href="#/"><b>问世界</b><small>Ask the World</small></a>
+    </div>
     <nav class="nav">${tabs.map(([k, h, l]) => `<a href="${h}" class="${active === k ? "on" : ""}">${l}</a>`).join("")}</nav>
   </div></header>
-  <main class="wrap">${inner}</main>`;
+  <main class="wrap">${inner}</main>
+  ${drawerHTML()}`;
+}
+
+// ---------- 左侧分类抽屉 ----------
+function drawerHTML() {
+  const sparks = S.questions.filter((q) => !q.topic_id);
+  const count = (id) => sparks.filter((q) => q.category_id === id).length;
+  const uncat = sparks.filter((q) => !q.category_id).length;
+  const open = sparks.filter((q) => !q.answer).length;
+  const item = (key, emoji, name, n) => `<button class="dr-item ${UI.cat === key ? "on" : ""}" data-cat="${key}"><span class="de">${emoji}</span><span class="dn">${esc(name)}</span><span class="dc">${n}</span></button>`;
+  return `<div class="drawer-bg" id="drawer-bg" hidden></div>
+  <aside class="drawer" id="drawer" aria-label="分类" aria-hidden="true">
+    <div class="dr-head"><b>分类</b><button class="btn small ghost" id="drawer-close" aria-label="关闭">✕</button></div>
+    <div class="dr-list">
+      ${item("all", "✨", "全部火花", sparks.length)}
+      ${S.categories.map((c) => item(c.id, c.emoji, c.name, count(c.id))).join("")}
+      ${uncat ? item("none", "📥", "未分类", uncat) : ""}
+    </div>
+    <div class="dr-sec">
+      <button class="dr-item ${UI.onlyOpen ? "on" : ""}" id="only-open"><span class="de">🌱</span><span class="dn">只看未解答</span><span class="dc">${open}</span></button>
+      ${open ? `<button class="dr-item" id="dice"><span class="de">🎲</span><span class="dn">随机抽一个未解答</span></button>` : ""}
+      ${sparks.length ? `<button class="dr-item" id="sel-mode"><span class="de">☑</span><span class="dn">批量删除</span></button>` : ""}
+      <a class="dr-item" href="#/cats"><span class="de">⚙︎</span><span class="dn">管理分类</span></a>
+    </div>
+    <p class="dr-tip">长按分类可以改名字和 emoji</p>
+  </aside>`;
+}
+function setDrawer(open) {
+  const d = $("#drawer"), bg = $("#drawer-bg"), b = $("#menu-btn");
+  if (!d) return;
+  UI.drawer = open;
+  d.classList.toggle("open", open);
+  d.setAttribute("aria-hidden", String(!open));
+  bg.hidden = !open;
+  b?.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("drawer-open", open);
 }
 
 let navCount = 0, baseHash = "#/";
@@ -473,17 +512,12 @@ function viewHome() {
     <h1>今天对世界好奇了什么？</h1>
   </section>
   ${captureBox()}
-  <div class="filters">
-    <button class="chip ${UI.cat === "all" ? "on" : ""}" data-cat="all">全部 <span class="n">${sparks.length}</span></button>
-    ${S.categories.map((c) => `<button class="chip ${UI.cat === c.id ? "on" : ""}" data-cat="${c.id}">${c.emoji} ${esc(c.name)} <span class="n">${count(c.id)}</span></button>`).join("")}
-    ${uncat ? `<button class="chip ${UI.cat === "none" ? "on" : ""}" data-cat="none">📥 未分类 <span class="n">${uncat}</span></button>` : ""}
-    <a class="chip" href="#/cats" style="text-decoration:none">⚙︎ 管理分类</a>
-  </div>
-  <div class="filters">
-    <button class="chip ${UI.onlyOpen ? "on" : ""}" id="only-open">🌱 只看未解答 <span class="n">${open}</span></button>
-    ${open ? `<button class="chip" id="dice">🎲 随机抽一个未解答</button>` : ""}
-    ${sparks.length && !UI.selecting ? `<button class="chip" id="sel-mode">☑ 批量删除</button>` : ""}
-  </div>
+  <button class="now-viewing" id="now-viewing">
+    <span>${UI.cat === "all" ? "✨ 全部火花" : UI.cat === "none" ? "📥 未分类" : `${catOf(UI.cat)?.emoji || ""} ${esc(catOf(UI.cat)?.name || "")}`}
+      <span class="muted">· ${UI.cat === "all" ? sparks.length : UI.cat === "none" ? uncat : count(UI.cat)} 个</span>
+      ${UI.onlyOpen ? `<span class="chip on" style="margin-left:6px">🌱 只看未解答</span>` : ""}</span>
+    <span class="muted">切换分类 ☰</span>
+  </button>
   ${body}
   ${selBar()}
   <div style="height:40px"></div>`;
@@ -1254,9 +1288,32 @@ function autoGrow(root = document) {
   });
 }
 
+// 手势：在页面上向右滑打开分类，在抽屉上向左滑关上（不从屏幕最边缘开始，避免和手机的返回手势冲突）
+(() => {
+  let sx = 0, sy = 0, tracking = false;
+  document.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    tracking = e.touches.length === 1 && !sheetEl && !e.target.closest("canvas, textarea, input, .graph-box");
+    sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  document.addEventListener("touchend", (e) => {
+    if (!tracking) return;
+    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dy) > 40 || Math.abs(dx) < 70) return;
+    if (dx > 0 && !UI.drawer && sx > 24) setDrawer(true);
+    else if (dx < 0 && UI.drawer) setDrawer(false);
+  }, { passive: true });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && UI.drawer) setDrawer(false); });
+})();
+
 // ---------- 事件绑定 ----------
 function bindCommon() {
   autoGrow();
+  const mb = $("#menu-btn"); if (mb) mb.onclick = () => setDrawer(!UI.drawer);
+  const nv = $("#now-viewing"); if (nv) nv.onclick = () => setDrawer(true);
+  const dc = $("#drawer-close"); if (dc) dc.onclick = () => setDrawer(false);
+  const dbg = $("#drawer-bg"); if (dbg) dbg.onclick = () => setDrawer(false);
+  if (UI.drawer) setDrawer(true);
   if (UI.fresh) setTimeout(() => { UI.fresh = null; }, 50);
   $$("form.capture:not(#sh-follow)").forEach((f) => {
     f.onsubmit = (e) => { e.preventDefault(); submitCapture(f, e.submitter?.dataset.mode || "save"); };
@@ -1284,7 +1341,7 @@ function bindCommon() {
   }));
   // 批量删除
   const selBtn = $("#sel-mode");
-  if (selBtn) selBtn.onclick = () => { UI.selecting = true; UI.sel = new Set(); UI.selConfirm = false; render(); };
+  if (selBtn) selBtn.onclick = () => { UI.drawer = false; UI.selecting = true; UI.sel = new Set(); UI.selConfirm = false; if (route().view !== "home" && route().view !== "topic") { UI.selView = null; go("#/"); } else render(); };
   const selBar = $("#selbar");
   if (selBar) {
     const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
@@ -1302,9 +1359,10 @@ function bindCommon() {
   }
   $$("[data-sg]").forEach((b) => (b.onclick = () => acceptSuggest(b.dataset.id, b.dataset.sg)));
   $$("[data-sgx]").forEach((b) => (b.onclick = () => dismissSuggest(b.dataset.id, b.dataset.sgx)));
-  $$("[data-cat]").forEach((b) => (b.onclick = () => { if (b.dataset.longpressed) { delete b.dataset.longpressed; return; } UI.cat = b.dataset.cat; UI.recent = new Set(); render(); }));
-  const oo = $("#only-open"); if (oo) oo.onclick = () => { UI.onlyOpen = !UI.onlyOpen; UI.recent = new Set(); render(); };
+  $$("[data-cat]").forEach((b) => (b.onclick = () => { if (b.dataset.longpressed) { delete b.dataset.longpressed; return; } UI.cat = b.dataset.cat; UI.recent = new Set(); UI.drawer = false; if (route().view !== "home") { go("#/"); } else { render(); scrollTo({ top: 0 }); } }));
+  const oo = $("#only-open"); if (oo) oo.onclick = () => { UI.onlyOpen = !UI.onlyOpen; UI.recent = new Set(); UI.drawer = false; if (route().view !== "home") go("#/"); else render(); };
   const dice = $("#dice"); if (dice) dice.onclick = () => {
+    setDrawer(false);
     const open = S.questions.filter((q) => !q.answer && !q.topic_id);
     openQ(open[Math.floor(Math.random() * open.length)].id);
   };
