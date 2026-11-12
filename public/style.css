@@ -487,3 +487,14 @@ body { background: transparent; }
 .ans-links a { font-size: 12.5px; text-decoration: none; padding: 3px 9px; border-radius: 999px; background: var(--bg); border: 1px solid var(--glass-edge, var(--line)); color: var(--teal); }
 
 .btn.teal.off { opacity: .55; }
+
+/* 滑动更顺：弹出层按「看得见的屏幕高度」算，不会顶出屏幕；输入框跟着内容长高，不在框里面滚 */
+.sheet { max-height: 92vh; max-height: 92dvh; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.sheet-head {
+  margin: 0 -16px; padding: 10px 16px; background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--glass-edge); border-radius: 20px 20px 0 0;
+}
+textarea, .textarea, .capture textarea, .q-edit { resize: none; overflow: hidden; }
+.textarea { min-height: 120px; }
+body.sheet-open { overflow: hidden; }

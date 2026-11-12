@@ -225,7 +225,7 @@ function shell(inner, active) {
 }
 
 let navCount = 0, baseHash = "#/";
-window.addEventListener("hashchange", () => { navCount++; render(); });
+window.addEventListener("hashchange", () => { navCount++; if (route().view !== "q") sheetPushed = false; render(); });
 function render() {
   let r = route();
   const sheetId = r.view === "q" ? r.id : null;
@@ -595,9 +595,18 @@ function viewSettings() {
 // ---------- 详情（底部弹出） ----------
 let sheetEl = null;
 function closeSheet() { if (sheetEl) { sheetEl.remove(); sheetEl = null; } document.body.style.overflow = ""; }
-function openQ(id) { go(`#/q/${id}`); }
+// 从列表打开问题：记一条历史（手机返回键能关掉）；在问题之间跳转：替换掉这一条，不越堆越多
+let sheetPushed = false;
+function openQ(id) {
+  if (route().view === "q") return location.replace(`#/q/${id}`);
+  sheetPushed = true;
+  go(`#/q/${id}`);
+}
 // 关闭详情：有历史就后退（手机返回键也一样），直接打开的链接就回到底下的页面
-function leaveSheet() { if (navCount > 0) history.back(); else go(baseHash === location.hash ? "#/" : baseHash); }
+function leaveSheet() {
+  if (sheetPushed) { sheetPushed = false; history.back(); }
+  else location.replace(baseHash && !baseHash.startsWith("#/q/") ? baseHash : "#/");
+}
 
 function sheetHTML(q) {
   const p = qOf(q.parent_id), kids = childrenOf(q.id);
@@ -608,7 +617,7 @@ function sheetHTML(q) {
   return `
   <div class="sheet" role="dialog" aria-modal="true" aria-label="问题详情">
     <div class="sheet-head">
-      <button class="btn small ghost" id="sh-close">← 返回</button>
+      <button class="btn small ghost" id="sh-close">✕ 关闭</button>
       <span class="muted" style="font-size:12.5px">${ymd(q.created_at)} ${hm(q.created_at)}</span>
       <button class="btn small ghost danger" id="sh-del">删除</button>
     </div>
@@ -701,6 +710,7 @@ async function patchQ(id, patch, { silent = true } = {}) {
 }
 
 function bindSheet(id) {
+  autoGrow(sheetEl);
   const q = () => qOf(id);
   const sh = sheetEl;
   const leave = leaveSheet;
@@ -738,7 +748,7 @@ function bindSheet(id) {
     await patchQ(id, { topic_id: e.target.value || null, suggest: Object.keys(s).length ? s : null });
     refreshSheet(id);
   };
-  $$("[data-goto]", sh).forEach((b) => (b.onclick = () => go(`#/q/${b.dataset.goto}`)));
+  $$("[data-goto]", sh).forEach((b) => (b.onclick = () => openQ(b.dataset.goto)));
   $$("[data-sg]", sh).forEach((b) => (b.onclick = async () => { await acceptSuggest(b.dataset.id, b.dataset.sg); }));
   $$("[data-sgx]", sh).forEach((b) => (b.onclick = async () => { await dismissSuggest(b.dataset.id, b.dataset.sgx); }));
 
@@ -1178,8 +1188,19 @@ function keepDraft(fn) {
   if (g && draft) { g.text.value = draft.text; g.context.value = draft.context; }
 }
 
+function autoGrow(root = document) {
+  $$("textarea", root).forEach((t) => {
+    if (t.dataset.grow) return;
+    t.dataset.grow = "1";
+    const fit = () => { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; };
+    t.addEventListener("input", fit);
+    requestAnimationFrame(fit);
+  });
+}
+
 // ---------- 事件绑定 ----------
 function bindCommon() {
+  autoGrow();
   $$("form.capture:not(#sh-follow)").forEach((f) => {
     f.onsubmit = (e) => { e.preventDefault(); submitCapture(f); };
     f.text.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitCapture(f); };
