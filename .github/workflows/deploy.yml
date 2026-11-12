@@ -1,0 +1,77 @@
+# 自动部署到 Cloudflare：每次推送到 main，或在 Actions 页面手动点 Run workflow
+# 需要在 GitHub 仓库 Settings → Secrets and variables → Actions 里设置：
+#   CLOUDFLARE_API_TOKEN   （权限：Account · Cloudflare Pages · Edit，Account · D1 · Edit）
+#   CLOUDFLARE_ACCOUNT_ID
+#   ACCESS_PASSWORD        进入网站的密码
+#   GROQ_API_KEY           可选，站内 AI
+#   OPENROUTER_API_KEY     可选
+#   DEEPSEEK_API_KEY       可选
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT: ask-the-world
+      DB_NAME: ask-the-world
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: 检查必填设置
+        run: |
+          missing=""
+          [ -z "$CLOUDFLARE_API_TOKEN" ] && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "$CLOUDFLARE_ACCOUNT_ID" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -z "${{ secrets.ACCESS_PASSWORD }}" ] && missing="$missing ACCESS_PASSWORD"
+          if [ -n "$missing" ]; then echo "::error::还没有设置这些 GitHub Secrets:$missing"; exit 1; fi
+
+      - name: 找到或创建 D1 数据库
+        run: |
+          find_id() { npx wrangler d1 list --json | jq -r --arg n "$DB_NAME" '.[] | select(.name==$n) | .uuid' | head -1; }
+          ID=$(find_id)
+          if [ -z "$ID" ]; then npx wrangler d1 create "$DB_NAME"; ID=$(find_id); fi
+          echo "数据库 ID: $ID"
+          sed -i "s/^database_id = .*/database_id = \"$ID\"/" wrangler.toml
+
+      - name: 建数据表（已经建过的会跳过）
+        run: npx wrangler d1 migrations apply "$DB_NAME" --remote
+
+      - name: 创建 Pages 项目（第一次）
+        run: npx wrangler pages project list | grep -q " $PROJECT " || npx wrangler pages project create "$PROJECT" --production-branch main
+
+      - name: 写入密码和 AI 密钥
+        env:
+          ACCESS_PASSWORD: ${{ secrets.ACCESS_PASSWORD }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          for name in ACCESS_PASSWORD GROQ_API_KEY OPENROUTER_API_KEY DEEPSEEK_API_KEY; do
+            value="${!name}"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | npx wrangler pages secret put "$name" --project-name "$PROJECT" > /dev/null
+              echo "已设置 $name"
+            fi
+          done
+
+      - name: 部署
+        run: npx wrangler pages deploy --project-name "$PROJECT" --branch main --commit-dirty=true
+
+      - name: 网站地址
+        run: echo "::notice::部署完成，网站地址：https://$PROJECT.pages.dev"

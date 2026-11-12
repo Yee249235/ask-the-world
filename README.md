@@ -14,45 +14,44 @@
 
 ---
 
-## 部署到 Cloudflare（免费，大约 15 分钟）
+## 部署到 Cloudflare（免费，全在网页上操作）
 
-全程在网页上操作，不需要装任何东西。
+仓库里已经有自动部署脚本（`.github/workflows/deploy.yml`），会自动建数据库、建表、创建网站、写入密码。你只需要准备几个密钥，填进 GitHub。
 
-### 1. 创建数据库
+### 1. 拿到 Cloudflare 的两个值
 
-1. 登录 [Cloudflare 控制台](https://dash.cloudflare.com/)（没有账号就注册一个，免费）
-2. 左侧菜单 **Storage & Databases → D1 SQL Database → Create**，名字填 `ask-the-world`
-3. 创建好后，复制页面上的 **Database ID**
-4. 打开这个数据库的 **Console** 标签，把 [`migrations/0001_init.sql`](migrations/0001_init.sql) 的全部内容粘贴进去，点 **Execute**，建好数据表
+- **Account ID**：登录 [Cloudflare 控制台](https://dash.cloudflare.com/) 后，浏览器地址栏 `dash.cloudflare.com/` 后面那一串 32 位字母数字就是
+- **API Token**：右上角头像 → **My Profile → API Tokens → Create Token → Create Custom Token**
+  - 权限加两行：`Account · Cloudflare Pages · Edit` 和 `Account · D1 · Edit`
+  - 点 Continue → Create Token，复制生成的 token（只显示一次）
 
-### 2. 把数据库 ID 填进代码
+### 2. 拿到 AI 密钥（推荐）
 
-在 GitHub 上打开 [`wrangler.toml`](wrangler.toml)，点铅笔图标编辑，把
-`database_id = "00000000-0000-0000-0000-000000000000"` 换成你刚才复制的 ID，提交。
+在 [console.groq.com/keys](https://console.groq.com/keys) 免费申请一个 Groq API Key，不需要信用卡。
 
-### 3. 创建网站
+### 3. 填进 GitHub
 
-1. 左侧菜单 **Workers & Pages → Create → Pages → Import an existing Git repository**
-2. 连接 GitHub，选择 `ask-the-world` 仓库
-3. 构建设置：**Build command 留空**，**Build output directory 填 `public`**
-4. 点 **Save and Deploy**
+打开仓库 **Settings → Secrets and variables → Actions → New repository secret**，逐个添加：
 
-### 4. 设置密码和 AI 密钥
-
-进入这个 Pages 项目 → **Settings → Variables and Secrets**，添加以下变量（类型选 **Secret**）：
-
-| 变量名 | 说明 |
+| 名字 | 内容 |
 |---|---|
-| `ACCESS_PASSWORD` | **必填**。进入网站的密码，只有你知道 |
-| `GROQ_API_KEY` | 推荐。在 [console.groq.com](https://console.groq.com/keys) 免费申请，不需要信用卡 |
-| `OPENROUTER_API_KEY` | 可选，备用。在 [openrouter.ai/keys](https://openrouter.ai/keys) 申请，默认使用免费模型 |
-| `DEEPSEEK_API_KEY` | 可选。DeepSeek 官方 API 需要先充值，但很便宜 |
+| `CLOUDFLARE_ACCOUNT_ID` | 第 1 步的 Account ID |
+| `CLOUDFLARE_API_TOKEN` | 第 1 步的 API Token |
+| `ACCESS_PASSWORD` | 进入网站的密码，自己定 |
+| `GROQ_API_KEY` | 第 2 步的 Groq Key（可选） |
+| `OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY` | 可选，备用 AI |
 
-加完后到 **Deployments** 里点最新一次部署右边的 **⋯ → Retry deployment**，让设置生效。然后打开网站地址（`xxx.pages.dev`），输入密码就能用了。
+### 4. 运行部署
+
+仓库 **Actions → Deploy → Run workflow**。大约两分钟后完成，网站地址是 `https://ask-the-world.pages.dev`（名字被占用时以 Actions 日志里显示的为准）。
+
+以后每次代码更新推送到 main，都会自动重新部署；改了密钥也只要再运行一次。
 
 > 一个 AI 密钥都不填也能用：记录、分类、课题、追问都正常，只是没有站内 AI，可以用「复制提问」去别的 AI 问，再把回答贴回来。
 
 ### 进阶：调整 AI 接口
+
+在 Cloudflare 的 Pages 项目 → Settings → Variables and Secrets 里添加：
 
 | 变量名 | 作用 |
 |---|---|
