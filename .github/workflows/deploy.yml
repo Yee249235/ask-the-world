@@ -1,4 +1,5 @@
-# 自动部署到 Cloudflare：每次推送到 main，或在 Actions 页面手动点 Run workflow
+# 部署到 Cloudflare：在 Actions 页面手动点 Run workflow
+# （设置好下面的 Secrets 后，可以把 on: 里的 push 那两行取消注释，改成每次推送自动部署）
 # 需要在 GitHub 仓库 Settings → Secrets and variables → Actions 里设置：
 #   CLOUDFLARE_API_TOKEN   （权限：Account · Cloudflare Pages · Edit，Account · D1 · Edit）
 #   CLOUDFLARE_ACCOUNT_ID
@@ -9,8 +10,8 @@
 name: Deploy
 
 on:
-  push:
-    branches: [main]
+  # push:
+  #   branches: [main]
   workflow_dispatch:
 
 concurrency: deploy

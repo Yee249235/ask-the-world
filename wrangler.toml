@@ -6,5 +6,5 @@ pages_build_output_dir = "public"
 binding = "DB"
 database_name = "ask-the-world"
 # 在 Cloudflare 创建 D1 数据库后，把它的 ID 填到这里（见 README）
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "f2e5d584-a6be-4aed-9f4e-23c0f4c855c0"
 migrations_dir = "migrations"
