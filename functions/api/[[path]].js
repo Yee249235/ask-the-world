@@ -17,7 +17,7 @@ const Q_FIELDS = ["short", "text", "context", "category_id", "topic_id", "parent
 
 // ---------- 数据读取 ----------
 async function getSettings(db) {
-  const { results } = await db.prepare("SELECT key, value FROM settings").all();
+  const { results } = await db.prepare("SELECT key, value FROM settings WHERE key != 'ai_last'").all();
   const s = { ...DEFAULT_SETTINGS };
   for (const r of results) s[r.key] = r.value;
   return s;
@@ -69,6 +69,7 @@ async function getState(db, env, request) {
     settings: s,
     providers: activeProviders(env, "answer").map((p) => `${p.label} · ${p.model.replace(/:free$/, "")}`),
     usage: await usageToday(db, request),
+    aiLast: JSON.parse((await db.prepare("SELECT value FROM settings WHERE key='ai_last'").first())?.value || "null"),
     search: hasSearch(env),
   };
 }
@@ -469,6 +470,8 @@ export async function onRequest({ request, env, params }) {
         const q = await getQ(db, body.id);
         if (!q) return json({ error: "找不到这个问题" }, 404);
         const r = await aiAnswer(db, env, q, { online: !!body.online && hasSearch(env), request });
+        // 记下这次有没有跳过更强的模型、为什么，方便在设置页排查
+        await db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('ai_last',?)").bind(JSON.stringify({ at: Date.now(), used: `${r.provider} · ${r.model}`, skipped: r.skipped || [] })).run();
         const updated = await updateQ(db, q.id, {
           answer: r.text, source: "site_ai", source_model: `${r.provider} · ${r.model}${r.online ? " · 🌐 联网" : ""}`, verified: false,
         });

@@ -582,3 +582,6 @@ body.drawer-open .menu-btn span:nth-child(3) { transform: translateY(-6px) rotat
 .now-viewing .muted { font-size: 13px; }
 
 .two.no-cat { grid-template-columns: 1fr; }
+
+.ai-last { font-size: 13.5px; }
+.ai-last .skip { font-size: 12.5px; color: var(--muted); word-break: break-all; }
