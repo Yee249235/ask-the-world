@@ -92,11 +92,13 @@ async function aiAnswer(db, env, q, { online = false, request } = {}) {
     const topic = await db.prepare("SELECT * FROM topics WHERE id=?").bind(q.topic_id).first();
     if (topic) system = fillTemplate(s.template_topic, { topic: topic.name, goal: topic.goal });
   }
+  // 追问要带上整条来路：从最开始的问题一路问到这里，每一步问了什么、答了什么
+  const chain = await ancestors(db, q);
   let user = q.text;
   if (q.context) user += `\n（当时的场景：${q.context}）`;
-  if (q.parent_id) {
-    const p = await getQ(db, q.parent_id);
-    if (p) user = `（这是从「${p.text}」追问而来的）\n${user}`;
+  if (chain.length) {
+    const story = chain.map((a, i) => `${i === 0 ? "最初的问题" : "接着追问"}：${a.text}${a.answer ? `\n回答：${a.answer.slice(0, 300)}` : ""}`).join("\n\n");
+    user = `下面是我之前的提问过程，现在的问题是接着它问的，请结合上下文理解（比如「它」「这个」指的是前面说的东西）：\n\n${story}\n\n现在的问题：${user}`;
   }
   const date = today(request);
   if (!online) {
@@ -105,7 +107,7 @@ async function aiAnswer(db, env, q, { online = false, request } = {}) {
     return chat(env, [{ role: "system", content: system }, { role: "user", content: user }]);
   }
   let results = [];
-  try { results = await webSearch(env, q.text); }
+  try { results = await webSearch(env, await searchQuery(env, q, chain)); }
   catch (e) { console.warn("search failed", e.message); }
   // 搜索额度用完、出错或没搜到，就自动退回不联网回答，不让人卡住
   if (!results.length) return { ...(await aiAnswer(db, env, q, { online: false, request })), fallback: true };
@@ -121,6 +123,31 @@ async function aiAnswer(db, env, q, { online = false, request } = {}) {
   // 不显示引用：去掉模型偶尔还是会写的 [1] 编号和来源列表
   const text = r.text.replace(/\s*\[\d+(?:[,，、\s]*\d+)*\]/g, "").replace(/\n+\s*(来源|参考|资料来源)[:：][\s\S]*$/, "").trim();
   return { ...r, text, online: true };
+}
+
+// 从最早的问题到上一级，按顺序（最多 6 层）
+async function ancestors(db, q) {
+  const out = [];
+  let pid = q.parent_id;
+  while (pid && out.length < 6) {
+    const p = await getQ(db, pid);
+    if (!p) break;
+    out.unshift(p);
+    pid = p.parent_id;
+  }
+  return out;
+}
+
+// 追问常常省略主语（「能治好吗？」），直接拿去搜会搜偏，先改写成一个完整的搜索词
+async function searchQuery(env, q, chain) {
+  if (!chain.length) return q.text;
+  const fallback = `${chain[0].text} ${q.text}`.slice(0, 200);
+  try {
+    const ctx = chain.map((a) => a.text).join(" → ");
+    const r = await chat(env, [{ role: "user", content: `提问过程：${ctx} → ${q.text}\n\n把最后这个问题改写成一句完整、独立、适合搜索引擎的中文搜索词，补全被省略的主语。只输出搜索词本身。` }], { temperature: 0, maxTokens: 60 });
+    const t = r.text.split("\n")[0].replace(/^["“「]|["”」]$/g, "").trim();
+    return t && t.length <= 80 ? t : fallback;
+  } catch { return fallback; }
 }
 
 async function aiClassify(db, env, q) {
@@ -158,7 +185,9 @@ ${topicList}
 }
 
 async function aiFollowups(db, env, q) {
-  const prompt = `我对世界有一个好奇的问题，以及目前得到的回答。请给出 3 个值得继续追问的问题，帮助我想得更深或更有趣。
+  const chain = await ancestors(db, q);
+  const before = chain.length ? `（之前的提问过程：${chain.map((a) => a.text).join(" → ")}）\n` : "";
+  const prompt = `${before}我对世界有一个好奇的问题，以及目前得到的回答。请给出 3 个值得继续追问的问题，帮助我想得更深或更有趣。
 每个问题要短（20 字以内），口语化，彼此方向不同。只输出 JSON 字符串数组，每个问题都要用英文双引号包起来，例如 ["为什么会这样？","有没有例外？","生活中怎么用？"]。
 
 问题：${q.text}

@@ -73,11 +73,9 @@ function copyQuestion(q) {
   copyText(text);
 }
 
-const onlineFirst = () => S.search && S.settings.answer_online !== "0";
+const onlineFirst = () => !!S.search;
 function answerButtons(busy) {
-  const web = `<button class="btn small ${onlineFirst() ? "teal" : "ghost"} ${S.search ? "" : "off"}" id="sh-web" ${busy.answer ? "disabled" : ""}>${busy.answer === "web" ? `<span class="spin">🌐</span> 搜索中…` : onlineFirst() ? "🌐 AI 回答" : "🌐 联网"}</button>`;
-  const local = `<button class="btn small ${onlineFirst() ? "ghost" : "brass"}" id="sh-ai" ${busy.answer ? "disabled" : ""}>${busy.answer === "local" ? `<span class="spin">✨</span> 思考中…` : onlineFirst() ? "不联网" : "✨ AI 回答"}</button>`;
-  return onlineFirst() ? web + local : local + web;
+  return `<button class="btn small brass" id="sh-ai" ${busy.answer ? "disabled" : ""}>${busy.answer ? `<span class="spin">✨</span> ${onlineFirst() ? "搜索并思考中…" : "思考中…"}` : "✨ AI 回答"}</button>`;
 }
 
 // 记下问题后马上在后台回答
@@ -294,7 +292,7 @@ function captureBox({ topicId = null, placeholder = "冒出一个问题？先记
       <span class="hint"></span>
       <span class="bar">
         <button class="btn" data-mode="save">先记下</button>
-        ${hasAI() ? `<button class="btn primary" data-mode="answer">${onlineFirst() ? "🌐" : "✨"} 记下并回答</button>` : `<button class="btn primary" data-mode="save">记下 ✍️</button>`}
+        ${hasAI() ? `<button class="btn primary" data-mode="answer">✨ 记下并回答</button>` : `<button class="btn primary" data-mode="save">记下 ✍️</button>`}
       </span>
     </div>
   </form>`;
@@ -340,7 +338,7 @@ function card(q, { deck = 0, open = false } = {}) {
       <span class="time">${hm(q.created_at)}</span>
     </div>
     <h3>${esc(q.text)}</h3>
-    ${UI.answering?.has(q.id) ? `<p class="ans none"><span class="spin">${onlineFirst() ? "🌐" : "✨"}</span> 正在回答…</p>` : q.answer ? `<p class="ans">${esc(q.answer)}</p>` : `<p class="ans none">🌱 还没有答案</p>`}
+    ${UI.answering?.has(q.id) ? `<p class="ans none"><span class="spin">✨</span> 正在回答…</p>` : q.answer ? `<p class="ans">${esc(q.answer)}</p>` : `<p class="ans none">🌱 还没有答案</p>`}
     <div class="foot">
       ${p ? `<span>↖ 追问自「${esc(p.text.slice(0, 18))}${p.text.length > 18 ? "…" : ""}」</span>` : ""}
       ${deck ? "" : kids ? `<span>↳ ${kids} 个追问</span>` : ""}
@@ -598,8 +596,7 @@ function viewSettings() {
   </div>
   <div class="panel">
     <h3>🌐 联网回答</h3>
-    ${S.search ? `<p>已开启。联网时会先上网搜最新资料再回答，适合新闻、热点、现任人物、价格这类会变的事。免费额度每月 1000 次，用完会自动改成不联网回答，不会收费。</p>
-      <label class="verify" style="margin:0"><input type="checkbox" id="set-online" ${S.settings.answer_online !== "0" ? "checked" : ""} /> 回答时默认先联网</label>`
+    ${S.search ? `<p>已开启。「AI 回答」会先上网搜最新资料再回答。免费额度每月 1000 次，用完会自动改成不联网回答，不会收费。</p>`
       : `<p>还没开启。站内 AI 的知识有截止时间，不知道最近发生的事。在 Cloudflare 的环境变量里加上 <code>TAVILY_API_KEY</code>（免费，每月 1000 次）就能联网。</p>`}
   </div>
   <form class="panel" id="tpl-form">
@@ -810,7 +807,7 @@ function bindSheet(id) {
 
   const ask = (btn, online) => async () => {
     if (q().answer && btn.dataset.sure !== "1") { btn.dataset.sure = "1"; btn.textContent = "会覆盖现在的答案，再点一次"; return; }
-    UI.busy[id] = { ...UI.busy[id], answer: online ? "web" : "local" }; refreshSheet(id);
+    UI.busy[id] = { ...UI.busy[id], answer: true }; refreshSheet(id);
     try {
       const r = await api("ai/answer", { method: "POST", body: { id, online } });
       if (r._note) toast(r._note);
@@ -820,9 +817,8 @@ function bindSheet(id) {
     catch (e) { toast(e.message.slice(0, 90)); }
     UI.busy[id] = { ...UI.busy[id], answer: false }; refreshSheet(id);
   };
-  const aiBtn = $("#sh-ai", sh), webBtn = $("#sh-web", sh);
-  if (aiBtn) aiBtn.onclick = ask(aiBtn, false);
-  if (webBtn) webBtn.onclick = S.search ? ask(webBtn, true) : () => toast("联网还没开启：需要先设置免费的 Tavily 密钥（见 ⚙️ 设置）");
+  const aiBtn = $("#sh-ai", sh);
+  if (aiBtn) aiBtn.onclick = ask(aiBtn, onlineFirst());
 
   const ff = $("#sh-follow", sh);
   ff.onsubmit = async (e) => {
