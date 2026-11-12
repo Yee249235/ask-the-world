@@ -153,7 +153,7 @@ function captureBox({ topicId = null, placeholder = "冒出一个问题？先记
     <input class="ctx" name="context" placeholder="＋ 当时的场景（可不填）：在哪、因为什么想到的" aria-label="场景" />
     ${pick}
     <div class="row">
-      <span class="hint">${topicId ? "会按时间排进这个课题" : UI.pickCat ? `放进 ${catOf(UI.pickCat)?.emoji || ""} ${esc(catOf(UI.pickCat)?.name || "")}` : "不选分类也可以，之后再放"}</span>
+      <span class="hint"></span>
       <button class="btn primary">记下 ✍️</button>
     </div>
   </form>`;
@@ -281,7 +281,6 @@ function viewHome() {
   <section class="hero">
     <div class="deco" aria-hidden="true">🔭 🔍 🧭 ✨</div>
     <h1>今天对世界好奇了什么？</h1>
-    <p class="muted" style="margin:0">火花：日常冒出来的问题，彼此不需要有关联。想为一件事连续发问，就去「课题」。</p>
   </section>
   ${captureBox()}
   <div class="filters">
@@ -443,22 +442,18 @@ function sheetHTML(q) {
       <button class="btn small ghost danger" id="sh-del">删除</button>
     </div>
 
-    ${p ? `<button class="mini" data-goto="${p.id}" style="width:100%;margin-bottom:10px">↖ 追问自「${esc(p.text)}」</button>` : ""}
+    ${p ? `<button class="parent-ctx" data-goto="${p.id}">
+      <span class="muted">↖ 追问自</span> ${esc(p.text)}
+      ${p.answer ? `<span class="pa">${esc(p.answer)}</span>` : ""}
+    </button>` : ""}
     <textarea class="q-edit" id="sh-text" rows="1" aria-label="问题">${esc(q.text)}</textarea>
-    <div class="bar" style="margin-top:4px"><button class="copy-tag" id="sh-copy">📋 复制提问</button>
-      ${q.ask_by === "ai" ? `<span class="badge-ai">AI 建议的追问</span>` : ""}</div>
-
-    <div class="two field">
-      <div><label class="label" for="sh-cat">分类</label>
-        <select class="input" id="sh-cat"><option value="">📥 未分类</option>
-        ${S.categories.map((c) => `<option value="${c.id}" ${c.id === q.category_id ? "selected" : ""}>${c.emoji} ${esc(c.name)}</option>`).join("")}</select></div>
-      <div><label class="label" for="sh-topic">课题</label>
-        <select class="input" id="sh-topic"><option value="">— 不属于课题 —</option>
-        ${S.topics.map((t) => `<option value="${t.id}" ${t.id === q.topic_id ? "selected" : ""}>${t.emoji} ${esc(t.name)}</option>`).join("")}</select></div>
+    <div class="bar" style="margin-top:6px">
+      ${catOf(q.category_id) ? `<span class="chip">${catOf(q.category_id).emoji} ${esc(catOf(q.category_id).name)}</span>` : ""}
+      ${topicOf(q.topic_id) ? `<span class="chip topic">${topicOf(q.topic_id).emoji} ${esc(topicOf(q.topic_id).name)}</span>` : ""}
+      ${q.ask_by === "ai" ? `<span class="badge-ai">AI 提示的追问</span>` : ""}
+      <button class="copy-tag" id="sh-copy">📋 复制提问</button>
     </div>
     ${suggestBar(q)}
-    <div class="field"><label for="sh-ctx">当时的场景</label>
-      <input class="input" id="sh-ctx" value="${esc(q.context)}" placeholder="在哪、因为什么想到的" /></div>
 
     <div class="field">
       <div class="bar space"><span class="label" style="margin:0">答案</span>
@@ -466,7 +461,7 @@ function sheetHTML(q) {
           ${hasAI() ? `<button class="btn small brass" id="sh-ai" ${busy.answer ? "disabled" : ""}>${busy.answer ? `<span class="spin">✨</span> 思考中…` : "✨ 站内 AI 回答"}</button>` : ""}
           <button class="btn small" id="sh-paste">📥 贴进来</button>
         </span></div>
-      <textarea class="textarea" id="sh-ans" placeholder="一个框就够了。可以让站内 AI 写，也可以把别的 AI 的回答贴进来，或者自己写。" style="margin-top:8px">${esc(q.answer)}</textarea>
+      <textarea class="textarea" id="sh-ans" placeholder="写下答案，或者贴进来" style="margin-top:8px">${esc(q.answer)}</textarea>
       <div class="src" id="sh-src">
         ${q.source === "site_ai" ? `<span class="chip on">${SRC.site_ai}</span><span>${esc(q.source_model || "")}</span>` : `
           <span>来源：</span>
@@ -488,6 +483,20 @@ function sheetHTML(q) {
     </form>
 
     ${rel.length ? `<h4 class="section-t">🔗 有关联的问题</h4><div class="list">${rel.map(({ l, other }) => `<button class="mini" data-goto="${other.id}">${esc(other.text)}<small>${esc(l.why)}</small></button>`).join("")}</div>` : ""}
+
+    <details class="more" ${UI.moreOpen ? "open" : ""}>
+      <summary>分类 · 课题 · 场景</summary>
+      <div class="two field">
+        <div><label class="label" for="sh-cat">分类</label>
+          <select class="input" id="sh-cat"><option value="">📥 未分类</option>
+          ${S.categories.map((c) => `<option value="${c.id}" ${c.id === q.category_id ? "selected" : ""}>${c.emoji} ${esc(c.name)}</option>`).join("")}</select></div>
+        <div><label class="label" for="sh-topic">课题</label>
+          <select class="input" id="sh-topic"><option value="">— 不属于课题 —</option>
+          ${S.topics.map((t) => `<option value="${t.id}" ${t.id === q.topic_id ? "selected" : ""}>${t.emoji} ${esc(t.name)}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label class="label" for="sh-ctx">当时的场景</label>
+        <input class="input" id="sh-ctx" value="${esc(q.context)}" placeholder="在哪、因为什么想到的" /></div>
+    </details>
   </div>`;
 }
 
@@ -538,6 +547,8 @@ function bindSheet(id) {
   const fit = () => { qt.style.height = "auto"; qt.style.height = qt.scrollHeight + "px"; };
   fit(); qt.oninput = fit;
   $("#sh-copy", sh).onclick = () => copyQuestion(q());
+  const more = $("details.more", sh);
+  more.ontoggle = () => { UI.moreOpen = more.open; };
   $("#sh-text", sh).onchange = (e) => { const v = e.target.value.trim(); if (v) patchQ(id, { text: v }); };
   $("#sh-ctx", sh).onchange = (e) => patchQ(id, { context: e.target.value.trim() });
   $("#sh-cat", sh).onchange = async (e) => {
