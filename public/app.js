@@ -30,12 +30,15 @@ async function api(path, opts = {}) {
   return data;
 }
 let toastT;
-function toast(msg) {
+function toast(msg, action) {
   const t = $("#toast");
   t.textContent = msg;
+  t.classList.toggle("act", !!action);
+  t.onclick = action ? () => { t.classList.remove("show"); action(); } : null;
+  if (action) t.insertAdjacentHTML("beforeend", ` <b>›</b>`);
   t.classList.add("show");
   clearTimeout(toastT);
-  toastT = setTimeout(() => t.classList.remove("show"), 2400);
+  toastT = setTimeout(() => t.classList.remove("show"), action ? 5000 : 2400);
 }
 const catOf = (id) => S.categories.find((c) => c.id === id);
 const topicOf = (id) => S.topics.find((t) => t.id === id);
@@ -88,7 +91,10 @@ async function answerInBackground(id) {
     if (q._note) toast(q._note);
     delete q._note;
     upsertQ(q);
-    toast("答好了 💡 点开看看");
+    UI.recent ||= new Set();
+    UI.recent.add(id);
+    UI.fresh = id;
+    toast("答好了 💡 点这里查看", () => openQ(id));
   } catch (e) { toast(e.message.slice(0, 90)); }
   UI.answering.delete(id);
   if (sheetEl && route().id === id) refreshSheet(id); else keepScroll(render);
@@ -308,6 +314,10 @@ async function submitCapture(form, mode = "save") {
     const q = await api("questions", { method: "POST", body: { text, context: form.context.value.trim(), topic_id: topicId, category_id: topicId ? null : UI.pickCat || null } });
     upsertQ(q);
     form.reset();
+    UI.recent ||= new Set();
+    UI.recent.add(q.id);
+    UI.fresh = q.id;
+    if (!topicId && UI.cat !== "all" && UI.cat !== (q.category_id || "none")) UI.cat = q.category_id || "none";
     toast(mode === "answer" ? "记下了，正在回答…" : "记下了 🌱");
     render();
     if (mode === "answer" && hasAI()) answerInBackground(q.id);
@@ -330,7 +340,7 @@ function card(q, { deck = 0, open = false } = {}) {
   const c = catOf(q.category_id), t = topicOf(q.topic_id), p = qOf(q.parent_id);
   const kids = childrenOf(q.id).length;
   return `
-  <article class="card ${q.answer ? "" : "open"} ${UI.selecting ? "selecting" : ""} ${UI.sel?.has(q.id) ? "picked" : ""}" data-open="${q.id}">
+  <article class="card ${q.answer ? "" : "open"} ${UI.fresh === q.id ? "fresh" : ""} ${UI.selecting ? "selecting" : ""} ${UI.sel?.has(q.id) ? "picked" : ""}" data-open="${q.id}">
     ${UI.selecting ? `<span class="tick" aria-hidden="true">${UI.sel.has(q.id) ? "✓" : ""}</span>` : ""}
     <div class="meta">
       ${c ? `<span class="chip">${c.emoji} ${esc(c.name)}</span>` : `<span class="chip">📥 未分类</span>`}
@@ -420,7 +430,8 @@ function viewHome() {
   let qs = sparks;
   if (UI.cat === "none") qs = qs.filter((q) => !q.category_id);
   else if (UI.cat !== "all") qs = qs.filter((q) => q.category_id === UI.cat);
-  if (UI.onlyOpen) qs = qs.filter((q) => !q.answer);
+  UI.recent ||= new Set();
+  if (UI.onlyOpen) qs = qs.filter((q) => !q.answer || UI.recent.has(q.id));
   const count = (id) => sparks.filter((q) => q.category_id === id).length;
   const uncat = sparks.filter((q) => !q.category_id).length;
   const open = sparks.filter((q) => !q.answer).length;
@@ -1229,6 +1240,7 @@ function autoGrow(root = document) {
 // ---------- 事件绑定 ----------
 function bindCommon() {
   autoGrow();
+  if (UI.fresh) setTimeout(() => { UI.fresh = null; }, 50);
   $$("form.capture:not(#sh-follow)").forEach((f) => {
     f.onsubmit = (e) => { e.preventDefault(); submitCapture(f, e.submitter?.dataset.mode || "save"); };
     f.text.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitCapture(f, hasAI() ? "answer" : "save"); };
@@ -1273,8 +1285,8 @@ function bindCommon() {
   }
   $$("[data-sg]").forEach((b) => (b.onclick = () => acceptSuggest(b.dataset.id, b.dataset.sg)));
   $$("[data-sgx]").forEach((b) => (b.onclick = () => dismissSuggest(b.dataset.id, b.dataset.sgx)));
-  $$("[data-cat]").forEach((b) => (b.onclick = () => { if (b.dataset.longpressed) { delete b.dataset.longpressed; return; } UI.cat = b.dataset.cat; render(); }));
-  const oo = $("#only-open"); if (oo) oo.onclick = () => { UI.onlyOpen = !UI.onlyOpen; render(); };
+  $$("[data-cat]").forEach((b) => (b.onclick = () => { if (b.dataset.longpressed) { delete b.dataset.longpressed; return; } UI.cat = b.dataset.cat; UI.recent = new Set(); render(); }));
+  const oo = $("#only-open"); if (oo) oo.onclick = () => { UI.onlyOpen = !UI.onlyOpen; UI.recent = new Set(); render(); };
   const dice = $("#dice"); if (dice) dice.onclick = () => {
     const open = S.questions.filter((q) => !q.answer && !q.topic_id);
     openQ(open[Math.floor(Math.random() * open.length)].id);

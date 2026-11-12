@@ -507,3 +507,10 @@ html, body { max-width: 100%; overflow-x: clip; }
 }
 .ans-links a { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .src { min-width: 0; }
+
+/* 可以点的提示 */
+#toast.act { pointer-events: auto; cursor: pointer; padding: 11px 18px; }
+#toast b { margin-left: 4px; }
+/* 刚记下 / 刚答好的卡片亮一下 */
+.card.fresh { animation: fresh 1.6s ease-out; }
+@keyframes fresh { 0% { box-shadow: 0 0 0 3px var(--brass), var(--glass-shadow); } 100% { box-shadow: var(--glass-shadow); } }
