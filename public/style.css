@@ -498,3 +498,12 @@ body { background: transparent; }
 textarea, .textarea, .capture textarea, .q-edit { resize: none; overflow: hidden; }
 .textarea { min-height: 120px; }
 body.sheet-open { overflow: hidden; }
+
+/* 防止任何内容把页面撑得比手机屏幕还宽（那样浏览器会把整页缩小） */
+html, body { max-width: 100%; overflow-x: clip; }
+.sheet, .sheet-bg { max-width: 100vw; }
+.textarea, .q-edit, .card h3, .card .ans, .mini, .fcard, .parent-ctx, .mv-q, .graph-tip, #toast, .ans-links a, .src {
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.ans-links a { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.src { min-width: 0; }

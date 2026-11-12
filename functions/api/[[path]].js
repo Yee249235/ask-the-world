@@ -117,7 +117,9 @@ async function aiAnswer(db, env, q, { online = false, request } = {}) {
   ], { maxTokens: 900 });
   // 只列出回答里真正引用到的来源
   const used = results.filter((_, i) => r.text.includes(`[${i + 1}]`));
-  const list = (used.length ? used : results.slice(0, 3)).map((x) => `[${results.indexOf(x) + 1}] ${x.title} ${x.url}`).join("\n");
+  // 网址里的 %E8%87%AA… 还原成中文，短一些也好读
+  const pretty = (u) => { try { return decodeURI(u); } catch { return u; } };
+  const list = (used.length ? used : results.slice(0, 3)).map((x) => `[${results.indexOf(x) + 1}] ${x.title}\n${pretty(x.url)}`).join("\n");
   return { ...r, text: `${r.text}\n\n来源：\n${list}`, online: true };
 }
 
