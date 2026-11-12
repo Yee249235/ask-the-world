@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122109";
+const VERSION = "11122114";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -32,14 +32,27 @@ async function api(path, opts = {}) {
 }
 let toastT;
 function toast(msg, action) {
+  if (action) return snack(msg, action);
   const t = $("#toast");
   t.textContent = msg;
-  t.classList.toggle("act", !!action);
-  t.onclick = action ? () => { t.classList.remove("show"); action(); } : null;
-  if (action) t.insertAdjacentHTML("beforeend", ` <b>›</b>`);
   t.classList.add("show");
   clearTimeout(toastT);
-  toastT = setTimeout(() => t.classList.remove("show"), action ? 5000 : 2400);
+  toastT = setTimeout(() => t.classList.remove("show"), 2400);
+}
+let snackT;
+function snack(msg, action) {
+  let el = $("#snack");
+  if (!el) { el = document.createElement("div"); el.id = "snack"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+  el.innerHTML = `<span class="sm">${esc(msg)}</span><button class="btn small primary" data-go>查看</button><button class="btn small ghost" data-x aria-label="关闭">✕</button>`;
+  const hide = () => { el.classList.remove("show"); clearTimeout(snackT); };
+  el.onclick = (e) => {
+    e.stopPropagation();
+    if (e.target.closest("[data-x]")) return hide();
+    hide(); action();
+  };
+  requestAnimationFrame(() => el.classList.add("show"));
+  clearTimeout(snackT);
+  snackT = setTimeout(hide, 9000);
 }
 const catOf = (id) => S.categories.find((c) => c.id === id);
 const topicOf = (id) => S.topics.find((t) => t.id === id);
@@ -95,7 +108,7 @@ async function answerInBackground(id) {
     UI.recent ||= new Set();
     UI.recent.add(id);
     UI.fresh = id;
-    toast("答好了 💡 点这里查看", () => openQ(id));
+    toast(`答好了：${(qOf(id)?.text || "").slice(0, 16)}`, () => openQ(id));
   } catch (e) { toast(e.message.slice(0, 90)); }
   UI.answering.delete(id);
   if (sheetEl && route().id === id) refreshSheet(id); else keepScroll(render);
@@ -346,6 +359,7 @@ function card(q, { deck = 0, open = false } = {}) {
     <div class="meta">
       ${c ? `<span class="chip">${c.emoji} ${esc(c.name)}</span>` : `<span class="chip">📥 未分类</span>`}
       ${t ? `<span class="chip topic">${t.emoji} ${esc(t.name)}</span>` : ""}
+      ${UI.recent?.has(q.id) && q.answer ? `<span class="chip just">💡 刚答好</span>` : ""}
       <span class="time">${hm(q.created_at)}</span>
     </div>
     <h3>${esc(q.text)}</h3>

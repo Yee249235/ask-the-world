@@ -514,3 +514,18 @@ html, body { max-width: 100%; overflow-x: clip; }
 /* 刚记下 / 刚答好的卡片亮一下 */
 .card.fresh { animation: fresh 1.6s ease-out; }
 @keyframes fresh { 0% { box-shadow: 0 0 0 3px var(--brass), var(--glass-shadow); } 100% { box-shadow: var(--glass-shadow); } }
+
+/* 答好了的提示条：贴在底部、整条都能点，不会和下面的分类标签混在一起 */
+#snack {
+  position: fixed; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 70;
+  display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 16px; border-radius: 16px;
+  background: color-mix(in srgb, var(--ink) 92%, transparent); color: var(--scene);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+  transform: translateY(140%); transition: transform .25s ease; cursor: pointer; max-width: 680px; margin: 0 auto;
+}
+#snack.show { transform: none; }
+#snack .sm { flex: 1; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#snack .btn.primary { background: var(--brass); color: #fff; }
+#snack .btn.ghost { color: var(--scene); opacity: .7; }
+.chip.just { background: var(--brass); color: #fff; border-color: transparent; }

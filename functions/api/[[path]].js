@@ -107,15 +107,17 @@ async function aiAnswer(db, env, q, { online = false, request } = {}) {
     return chat(env, [{ role: "system", content: system }, { role: "user", content: user }]);
   }
   let results = [];
-  try { results = await webSearch(env, await searchQuery(env, q, chain)); }
+  const query = await searchQuery(env, q, chain, date);
+  if (!query) return aiAnswer(db, env, q, { online: false, request }); // 常识问题不用联网
+  try { results = await webSearch(env, query); }
   catch (e) { console.warn("search failed", e.message); }
   // 搜索额度用完、出错或没搜到，就自动退回不联网回答，不让人卡住
   if (!results.length) return { ...(await aiAnswer(db, env, q, { online: false, request })), fallback: true };
   const refs = results.map((r, i) => `[${i + 1}] ${r.title}${r.date ? `（${r.date}）` : ""}\n${r.content}`).join("\n\n");
   system += `\n\n今天是 ${date}。下面是刚刚联网搜索到的资料，请以这些资料为准回答（它们比你自己的知识更新）。
-- 直接给出答案，不要写引用编号，不要列出来源或网址
-- 资料之间有矛盾，或者只是传闻、尚未证实，要直接说明
-- 资料里找不到答案就照实说，不要编造`;
+- 直接给出答案，不要写引用编号，不要列出来源或网址，也不要提到「资料」「搜索结果」这些字眼
+- 涉及最新情况时以资料为准；资料之间有矛盾，或者只是传闻、尚未证实，要直接说明
+- 资料没覆盖到的部分，用你自己的知识正常回答，不要说「资料中没有」`;
   const r = await chat(env, [
     { role: "system", content: system },
     { role: "user", content: `${user}\n\n—— 搜索资料 ——\n${refs}` },
@@ -138,15 +140,23 @@ async function ancestors(db, q) {
   return out;
 }
 
-// 追问常常省略主语（「能治好吗？」），直接拿去搜会搜偏，先改写成一个完整的搜索词
-async function searchQuery(env, q, chain) {
-  if (!chain.length) return q.text;
-  const fallback = `${chain[0].text} ${q.text}`.slice(0, 200);
+// 判断这个问题需不需要联网；需要的话顺便改写成完整的搜索词（追问常常省略主语，比如「能治好吗？」）
+// 返回 null 表示不用联网，靠模型自己的知识回答就好
+async function searchQuery(env, q, chain, date) {
+  const ctx = chain.length ? `提问过程：${chain.map((a) => a.text).join(" → ")} → ${q.text}` : `问题：${q.text}`;
+  const fallback = chain.length ? `${chain[0].text} ${q.text}`.slice(0, 200) : q.text;
   try {
-    const ctx = chain.map((a) => a.text).join(" → ");
-    const r = await chat(env, [{ role: "user", content: `提问过程：${ctx} → ${q.text}\n\n把最后这个问题改写成一句完整、独立、适合搜索引擎的中文搜索词，补全被省略的主语。只输出搜索词本身。` }], { temperature: 0, maxTokens: 60 });
-    const t = r.text.split("\n")[0].replace(/^["“「]|["”」]$/g, "").trim();
-    return t && t.length <= 80 ? t : fallback;
+    const r = await chat(env, [{ role: "user", content: `今天是 ${date}。${ctx}
+
+判断回答最后这个问题需不需要上网查最新信息。
+- 需要：新闻、最近发生的事、现任人物或职位、价格、比赛结果、版本号、营业时间、天气等会随时间变化的事
+- 不需要：常识、知识、语言、历史、科学原理、做法、建议、创作、列举例子等
+
+不需要就只输出：不需要
+需要就只输出一句完整、独立、适合搜索引擎的中文搜索词（补全被省略的主语），不要别的内容。` }], { temperature: 0, maxTokens: 60 });
+    const t = r.text.split("\n")[0].replace(/^["“「]|["”」]$/g, "").replace(/^搜索词[:：]\s*/, "").trim();
+    if (!t || /^不需要/.test(t)) return null;
+    return t.length <= 80 ? t : fallback;
   } catch { return fallback; }
 }
 
