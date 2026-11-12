@@ -1,0 +1,9 @@
+# 网页和脚本每次都向服务器确认是不是最新版，避免更新后手机还在用旧代码
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/*.js
+  Cache-Control: no-cache
+/*.css
+  Cache-Control: no-cache

@@ -74,7 +74,7 @@ jobs:
           done
 
       - name: 部署
-        run: npx wrangler pages deploy --project-name "$PROJECT" --branch main --commit-dirty=true
+        run: sh scripts/bump-version.sh && npx wrangler pages deploy --project-name "$PROJECT" --branch main --commit-dirty=true
 
       - name: 网站地址
         run: echo "::notice::部署完成，网站地址：https://$PROJECT.pages.dev"

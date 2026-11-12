@@ -6,7 +6,7 @@
     "dev": "wrangler pages dev",
     "db:local": "wrangler d1 migrations apply ask-the-world --local",
     "db:remote": "wrangler d1 migrations apply ask-the-world --remote",
-    "deploy": "wrangler pages deploy"
+    "deploy": "sh scripts/bump-version.sh && wrangler pages deploy"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

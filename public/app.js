@@ -1,5 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
+const VERSION = "11122109";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -625,7 +626,7 @@ function viewSettings() {
     <p>导出成 Markdown 文件，可以直接放进 Obsidian 或别的笔记软件。</p>
     <a class="btn" href="/api/export.md?tz=${-new Date().getTimezoneOffset()}" download>⬇️ 导出 Markdown</a>
   </div>
-  <div class="panel"><button class="btn danger" id="logout">退出登录</button></div>`;
+  <div class="panel bar space"><button class="btn danger" id="logout">退出登录</button><span class="muted" style="font-size:12px">版本 ${VERSION}</span></div>`;
 }
 
 // ---------- 详情（底部弹出） ----------
