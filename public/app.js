@@ -698,8 +698,8 @@ function refreshSheet(id) {
   if (!sheetEl) return;
   const scroll = $(".sheet", sheetEl).scrollTop;
   sheetEl.innerHTML = sheetHTML(qOf(id));
+  bindSheet(id); // 先把输入框撑到正确高度，再恢复滚动位置
   $(".sheet", sheetEl).scrollTop = scroll;
-  bindSheet(id);
 }
 
 async function patchQ(id, patch, { silent = true } = {}) {
@@ -1194,7 +1194,7 @@ function autoGrow(root = document) {
     t.dataset.grow = "1";
     const fit = () => { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; };
     t.addEventListener("input", fit);
-    requestAnimationFrame(fit);
+    if (t.isConnected) fit(); else requestAnimationFrame(fit); // 立刻撑开，避免高度先变小导致页面跳回顶部
   });
 }
 
