@@ -280,6 +280,33 @@ export async function onRequest({ request, env, params }) {
       ).bind(q.id, q.text, q.context, q.category_id, q.topic_id, q.parent_id, q.ask_by, t, t).run();
       return json(await getQ(db, q.id));
     }
+    // 批量删除：{ ids: [...], withFollowups: true/false }
+    if (id === "delete" && m === "POST") {
+      const ids = new Set((body.ids || []).map(String));
+      if (!ids.size) return json({ error: "没有选中问题" }, 400);
+      const { results: all } = await db.prepare("SELECT id, parent_id FROM questions").all();
+      const parentOf = Object.fromEntries(all.map((r) => [r.id, r.parent_id]));
+      if (body.withFollowups) {
+        // 把所有后代追问也加进去
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const r of all) if (!ids.has(r.id) && r.parent_id && ids.has(r.parent_id)) { ids.add(r.id); grew = true; }
+        }
+      }
+      // 留下来的追问，挂到最近一个没被删的上级，族谱不断
+      const keepParent = (pid) => { while (pid && ids.has(pid)) pid = parentOf[pid]; return pid || null; };
+      const stmts = [];
+      for (const r of all) {
+        if (!ids.has(r.id) && r.parent_id && ids.has(r.parent_id)) stmts.push(db.prepare("UPDATE questions SET parent_id=? WHERE id=?").bind(keepParent(r.parent_id), r.id));
+      }
+      for (const qid of ids) {
+        stmts.push(db.prepare("DELETE FROM links WHERE a=? OR b=?").bind(qid, qid));
+        stmts.push(db.prepare("DELETE FROM questions WHERE id=?").bind(qid));
+      }
+      for (let i = 0; i < stmts.length; i += 90) await db.batch(stmts.slice(i, i + 90));
+      return json({ ok: true, deleted: [...ids] });
+    }
     if (id && m === "PATCH") return json(await updateQ(db, id, body));
     if (id && m === "DELETE") {
       // 删除时把它的追问挂到它的上一级，族谱不会断掉

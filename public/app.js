@@ -68,6 +68,20 @@ function copyQuestion(q) {
   copyText(text);
 }
 
+// ---------- 删除 ----------
+function descendants(id) {
+  const out = [];
+  const walk = (pid) => S.questions.filter((q) => q.parent_id === pid).forEach((k) => { out.push(k.id); walk(k.id); });
+  walk(id);
+  return out;
+}
+async function deleteQuestions(ids, withFollowups) {
+  const r = await api("questions/delete", { method: "POST", body: { ids, withFollowups } });
+  Object.assign(S, await api("state"));
+  toast(`已删除 ${r.deleted.length} 个问题`);
+  return r;
+}
+
 // ---------- 路由 ----------
 function route() {
   const h = location.hash.replace(/^#\/?/, "");
@@ -126,6 +140,10 @@ function render() {
   } else baseHash = location.hash || "#/";
   const views = { home: viewHome, cats: viewCats, topics: viewTopics, topic: viewTopic, review: viewReview, stats: viewStats, settings: viewSettings };
   const fn = views[r.view] || viewHome;
+  // 换到别的页面就退出批量选择
+  const viewKey = r.view + (r.id || "");
+  if (UI.selecting && UI.selView && UI.selView !== viewKey) { UI.selecting = false; UI.sel = null; }
+  UI.selView = UI.selecting ? (UI.selView || viewKey) : null;
   if (r.view === "open") { UI.onlyOpen = true; UI.cat = "all"; location.replace("#/"); return; }
   const active = r.view === "topic" ? "topics" : r.view === "cats" ? "home" : r.view === "stats" ? "review" : r.view;
   if (graph) graph.stop();
@@ -191,7 +209,8 @@ function card(q) {
   const c = catOf(q.category_id), t = topicOf(q.topic_id), p = qOf(q.parent_id);
   const kids = childrenOf(q.id).length;
   return `
-  <article class="card ${q.answer ? "" : "open"}" data-open="${q.id}">
+  <article class="card ${q.answer ? "" : "open"} ${UI.selecting ? "selecting" : ""} ${UI.sel?.has(q.id) ? "picked" : ""}" data-open="${q.id}">
+    ${UI.selecting ? `<span class="tick" aria-hidden="true">${UI.sel.has(q.id) ? "✓" : ""}</span>` : ""}
     <div class="meta">
       ${c ? `<span class="chip">${c.emoji} ${esc(c.name)}</span>` : `<span class="chip">📥 未分类</span>`}
       ${t ? `<span class="chip topic">${t.emoji} ${esc(t.name)}</span>` : ""}
@@ -293,8 +312,10 @@ function viewHome() {
   <div class="filters">
     <button class="chip ${UI.onlyOpen ? "on" : ""}" id="only-open">🌱 只看未解答 <span class="n">${open}</span></button>
     ${open ? `<button class="chip" id="dice">🎲 随机抽一个未解答</button>` : ""}
+    ${sparks.length && !UI.selecting ? `<button class="chip" id="sel-mode">☑ 批量删除</button>` : ""}
   </div>
   ${body}
+  ${selBar()}
   <div style="height:40px"></div>`;
 }
 
@@ -390,7 +411,9 @@ function viewTopic(r) {
     <button class="btn small" data-topic-status="${t.id}">${t.status === "done" ? "重新打开" : "✓ 完成课题"}</button></span></div>
   </section>`}
   ${t.status !== "done" ? captureBox({ topicId: t.id, placeholder: `为了「${t.name}」，接下来想搞清楚什么？` }) : ""}
+  ${qs.length && !UI.selecting ? `<div style="margin-top:12px"><button class="chip" id="sel-mode">☑ 批量删除</button></div>` : ""}
   ${qs.length ? `<div class="journey">${qs.map(step).join("")}</div>` : `<div class="empty"><span class="big">🚩</span>从第一个问题出发吧</div>`}
+  ${selBar()}
   <div style="height:40px"></div>`;
 }
 
@@ -442,6 +465,7 @@ function sheetHTML(q) {
       <span class="muted" style="font-size:12.5px">${ymd(q.created_at)} ${hm(q.created_at)}</span>
       <button class="btn small ghost danger" id="sh-del">删除</button>
     </div>
+    <div class="delbox" id="sh-delbox" hidden></div>
 
     ${p ? `<button class="parent-ctx" data-goto="${p.id}">
       <span class="muted">↖ 追问自</span> ${esc(p.text)}
@@ -533,16 +557,19 @@ function bindSheet(id) {
   const leave = leaveSheet;
   sh.onclick = (e) => { if (e.target === sh) leave(); };
   $("#sh-close", sh).onclick = leave;
-  $("#sh-del", sh).onclick = async (e) => {
-    const b = e.currentTarget;
-    if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "再点一次确认删除"; return; }
-    await api(`questions/${id}`, { method: "DELETE" });
-    const removed = q();
-    S.questions = S.questions.filter((x) => x.id !== id);
-    S.questions.forEach((x) => { if (x.parent_id === id) x.parent_id = removed.parent_id; });
-    S.links = S.links.filter((l) => l.a !== id && l.b !== id);
-    toast("已删除");
-    leaveSheet();
+  $("#sh-del", sh).onclick = () => {
+    const kids = descendants(id).length;
+    const box = $("#sh-delbox", sh);
+    box.innerHTML = `<span>删除这个问题？</span><span class="bar">
+      ${kids ? `<button class="btn small" data-delk="0">只删这个</button><button class="btn small danger-fill" data-delk="1">连同 ${kids} 个追问一起删</button>`
+             : `<button class="btn small danger-fill" data-delk="0">确认删除</button>`}
+      <button class="btn small ghost" data-delk="x">取消</button></span>`;
+    box.hidden = false;
+    $$("[data-delk]", box).forEach((b) => (b.onclick = async () => {
+      if (b.dataset.delk === "x") { box.hidden = true; return; }
+      await deleteQuestions([id], b.dataset.delk === "1");
+      leaveSheet();
+    }));
   };
   const qt = $("#sh-text", sh);
   const fit = () => { qt.style.height = "auto"; qt.style.height = qt.scrollHeight + "px"; };
@@ -971,6 +998,27 @@ function roundTop(x, y, w, h, r) {
   return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
 }
 
+function keepScroll(fn) { const y = scrollY; keepDraft(fn); scrollTo(0, y); }
+function selBar() {
+  if (!UI.selecting) return "";
+  const n = UI.sel.size;
+  const kids = new Set([...UI.sel].flatMap(descendants).filter((id) => !UI.sel.has(id))).size;
+  return `<div class="selbar" id="selbar">${UI.selConfirm ? `
+    <span>删除这 ${n} 个问题？</span>
+    <span class="bar">
+      ${kids ? `<button class="btn small" id="sel-only">只删选中的</button><button class="btn small danger-fill" id="sel-kids">连同 ${kids} 个追问一起删</button>`
+             : `<button class="btn small danger-fill" id="sel-only">确认删除</button>`}
+      <button class="btn small ghost" id="sel-back">再想想</button>
+    </span>` : `
+    <span>已选 <b>${n}</b> 个</span>
+    <span class="bar">
+      <button class="btn small ghost" id="sel-all">全选</button>
+      <button class="btn small danger-fill" id="sel-del" ${n ? "" : "disabled"}>删除</button>
+      <button class="btn small ghost" id="sel-cancel">取消</button>
+    </span>`}
+  </div>`;
+}
+
 function keepDraft(fn) {
   const f = $("form.capture:not(#sh-follow)");
   const draft = f ? { text: f.text.value, context: f.context.value } : null;
@@ -985,7 +1033,29 @@ function bindCommon() {
     f.onsubmit = (e) => { e.preventDefault(); submitCapture(f); };
     f.text.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitCapture(f); };
   });
-  $$("[data-open]").forEach((el) => (el.onclick = (e) => { if (!e.target.closest("button")) openQ(el.dataset.open); }));
+  $$("[data-open]").forEach((el) => (el.onclick = (e) => {
+    if (e.target.closest("button")) return;
+    if (UI.selecting) { const id = el.dataset.open; UI.sel.has(id) ? UI.sel.delete(id) : UI.sel.add(id); keepScroll(render); return; }
+    openQ(el.dataset.open);
+  }));
+  // 批量删除
+  const selBtn = $("#sel-mode");
+  if (selBtn) selBtn.onclick = () => { UI.selecting = true; UI.sel = new Set(); UI.selConfirm = false; render(); };
+  const selBar = $("#selbar");
+  if (selBar) {
+    const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = fn; };
+    on("#sel-cancel", () => { UI.selecting = false; UI.sel = null; render(); });
+    on("#sel-all", () => { $$("[data-open]").forEach((c) => UI.sel.add(c.dataset.open)); keepScroll(render); });
+    on("#sel-del", () => { if (UI.sel.size) { UI.selConfirm = true; keepScroll(render); } });
+    const go = async (withKids) => {
+      await deleteQuestions([...UI.sel], withKids);
+      UI.selecting = false; UI.sel = null; UI.selConfirm = false; render();
+    };
+    const a = $("#sel-only"), b = $("#sel-kids"), c = $("#sel-back");
+    if (a) a.onclick = () => go(false);
+    if (b) b.onclick = () => go(true);
+    if (c) c.onclick = () => { UI.selConfirm = false; keepScroll(render); };
+  }
   $$("[data-sg]").forEach((b) => (b.onclick = () => acceptSuggest(b.dataset.id, b.dataset.sg)));
   $$("[data-sgx]").forEach((b) => (b.onclick = () => dismissSuggest(b.dataset.id, b.dataset.sgx)));
   $$("[data-cat]").forEach((b) => (b.onclick = () => { UI.cat = b.dataset.cat; render(); }));
