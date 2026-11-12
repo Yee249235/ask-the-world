@@ -1,6 +1,6 @@
 // 问世界 · 前端（无需构建，原生 JS）
 
-const VERSION = "11122224";
+const VERSION = "11122251";
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -422,11 +422,14 @@ window.addEventListener("hashchange", () => { navCount++; if (route().view !== "
 function render() {
   let r = route();
   const sheetId = r.view === "q" ? r.id : null;
+  const winOpen = r.view === "open";
+  if (winOpen) { const h = baseHash.replace(/^#\/?/, "").split("/"); r = { view: h[0] || "home", id: h[1] }; }
+  else if (winEl) closeWindow();
   if (sheetId) {
     // 详情是叠在当前页面上的，底下保持原来的页面
     const h = baseHash.replace(/^#\/?/, "").split("/");
     r = { view: h[0] || "home", id: h[1] };
-  } else baseHash = location.hash || "#/";
+  } else if (!winOpen) baseHash = location.hash || "#/";
   const views = { home: viewHome, cats: viewCats, topics: viewTopics, topic: viewTopic, review: viewReview, stats: viewStats, settings: viewSettings };
   const fn = views[r.view] || viewHome;
   // 换到别的页面就退出批量选择
@@ -442,6 +445,7 @@ function render() {
   if (r.view === "review") startGraph();
   closeSheet();
   if (sheetId) openSheet(sheetId);
+  if (winOpen) showWindow();
 }
 
 // ---------- 记录框 ----------
@@ -629,7 +633,7 @@ function viewHome() {
   }
   return `
   <section class="hero">
-    ${skyBadge()}
+    <div class="hero-row">${skyBadge()}<button class="open-win" id="open-win" title="清屏，看看窗外，去实践">🪟 开窗</button></div>
     <h1>今天对世界好奇了什么？</h1>
   </section>
   ${captureBox()}
@@ -1437,7 +1441,7 @@ function autoGrow(root = document) {
   let sx = 0, sy = 0, tracking = false;
   document.addEventListener("touchstart", (e) => {
     const t = e.touches[0];
-    tracking = e.touches.length === 1 && !sheetEl && !e.target.closest("canvas, textarea, input, .graph-box");
+    tracking = e.touches.length === 1 && !sheetEl && !winEl && !e.target.closest("canvas, textarea, input, .graph-box");
     sx = t.clientX; sy = t.clientY;
   }, { passive: true });
   document.addEventListener("touchend", (e) => {
@@ -1469,6 +1473,7 @@ function autoGrow(root = document) {
 function bindCommon() {
   autoGrow();
   const mb = $("#menu-btn"); if (mb) mb.onclick = () => setDrawer(!UI.drawer);
+  const ow = $("#open-win"); if (ow) ow.onclick = () => { Amb.unlock(); openWindow(); };
   const nv = $("#now-viewing"); if (nv) nv.onclick = () => setDrawer(true);
   const dc = $("#drawer-close"); if (dc) dc.onclick = () => setDrawer(false);
   $$("[data-close-drawer]").forEach((a) => (a.onclick = () => { UI.drawer = false; if (a.hasAttribute("data-new-topic")) editingTopic = "new"; if (location.hash === a.getAttribute("href")) { setDrawer(false); render(); } }));
@@ -1669,3 +1674,208 @@ load().catch((e) => {
     <p class="err">${esc(e.message)}</p>
     <button class="btn primary" onclick="location.reload()">重试</button></div></div>`;
 });
+
+// ================================================================
+// 开窗：问了这么多，该去实践了。清屏、看窗外、番茄钟、待办
+// ================================================================
+const WIN_KEY = "win-timer";
+const MODES = { focus: { label: "专注", min: 25 }, short: { label: "休息", min: 5 }, long: { label: "长休息", min: 15 } };
+let winEl = null, winTick = 0, wakeLock = null, idleT = 0;
+const T = (() => { try { return JSON.parse(localStorage.getItem(WIN_KEY) || "null"); } catch { return null; } })() || { mode: "focus", running: false, endAt: 0, left: 25 * 60, rounds: 0, focus: "" };
+const saveT = () => { try { localStorage.setItem(WIN_KEY, JSON.stringify(T)); } catch {} };
+const leftSec = () => Math.max(0, T.running ? Math.round((T.endAt - Date.now()) / 1000) : T.left);
+const fmt = (s) => `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
+
+function openWindow() { go("#/open"); }
+function closeWindow() {
+  if (!winEl) return;
+  winEl.classList.add("leaving");
+  window.Sky?.setOpen(false);
+  document.body.classList.remove("window-open");
+  clearInterval(winTick);
+  setTimeout(() => { winEl?.remove(); winEl = null; }, 500);
+  if (!T.running) Amb.stop();
+  releaseWake();
+}
+
+function winHTML() {
+  const total = MODES[T.mode].min * 60, s = leftSec();
+  const todos = S.todos || [];
+  const open = todos.filter((t) => !t.done), done = todos.filter((t) => t.done);
+  const ring = 2 * Math.PI * 54;
+  return `
+  <div class="win-top">
+    <button class="win-btn" id="win-close">← 关窗</button>
+    <button class="win-btn" id="win-sound" aria-pressed="${Amb.on}">${Amb.on ? "🔈 声音开" : "🔇 声音关"}</button>
+  </div>
+  <div class="win-hello" id="win-hello">想了这么多，<br/>该去实践了。</div>
+  <section class="win-timer" aria-label="番茄钟">
+    <div class="win-modes">${Object.entries(MODES).map(([k, m]) => `<button class="${T.mode === k ? "on" : ""}" data-wmode="${k}">${m.label} ${m.min}′</button>`).join("")}</div>
+    <div class="win-dial">
+      <svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="54" class="trk"/><circle cx="60" cy="60" r="54" class="prg" id="win-prg"
+        stroke-dasharray="${ring}" stroke-dashoffset="${ring * (s / total)}"/></svg>
+      <div class="win-time" id="win-time">${fmt(s)}</div>
+    </div>
+    <div class="win-focus" id="win-focus">${T.focus ? `正在做：${esc(T.focus)}` : T.mode === "focus" ? "从下面的待办里点一件事，专心做它" : "起来走走，看看窗外"}</div>
+    <div class="win-ctrl">
+      <button class="win-btn main" id="win-go">${T.running ? "暂停" : s < total ? "继续" : "开始"}</button>
+      <button class="win-btn" id="win-reset">重置</button>
+    </div>
+    ${T.rounds ? `<p class="win-rounds">今天已经专注了 ${T.rounds} 轮 🍅</p>` : ""}
+  </section>
+  <section class="win-todo" aria-label="待办">
+    <form id="todo-form" class="todo-add"><input id="todo-in" placeholder="接下来要做的一件事…" autocomplete="off" maxlength="200" /><button class="win-btn">＋</button></form>
+    <ul class="todo-list">
+      ${open.map((t) => todoItem(t)).join("") || `<li class="todo-empty">还没有待办。写下一件马上能动手的小事。</li>`}
+      ${done.length ? `<li class="todo-sep"><span>已完成 ${done.length}</span><button class="link" id="todo-clear">清除</button></li>${done.map((t) => todoItem(t)).join("")}` : ""}
+    </ul>
+  </section>
+  <p class="win-tip">轻点屏幕唤醒控制</p>`;
+}
+function todoItem(t) {
+  return `<li class="todo ${t.done ? "done" : ""} ${T.focus === t.text && !t.done ? "focus" : ""}" data-todo="${t.id}">
+    <button class="tick" data-todo-done aria-label="${t.done ? "标为未完成" : "完成"}">${t.done ? "✓" : ""}</button>
+    <span class="tx" data-todo-focus>${esc(t.text)}</span>
+    <button class="del" data-todo-del aria-label="删除">✕</button></li>`;
+}
+
+function showWindow() {
+  if (!winEl) {
+    winEl = document.createElement("div");
+    winEl.className = "win";
+    winEl.setAttribute("role", "dialog");
+    winEl.setAttribute("aria-label", "开窗：番茄钟和待办");
+    document.body.appendChild(winEl);
+    document.body.classList.add("window-open");
+    window.Sky?.setOpen(true);
+    requestAnimationFrame(() => winEl.classList.add("in"));
+  }
+  winEl.innerHTML = winHTML();
+  bindWindow();
+  clearInterval(winTick);
+  winTick = setInterval(tickWindow, 500);
+  if (T.running) keepAwake();
+}
+function refreshWindow() { if (winEl) { const y = $(".win-todo", winEl)?.scrollTop || 0; winEl.innerHTML = winHTML(); bindWindow(); const l = $(".win-todo", winEl); if (l) l.scrollTop = y; } }
+
+function tickWindow() {
+  if (!winEl) return;
+  const total = MODES[T.mode].min * 60, s = leftSec();
+  const el = $("#win-time", winEl); if (el) el.textContent = fmt(s);
+  const p = $("#win-prg", winEl); if (p) p.setAttribute("stroke-dashoffset", String(2 * Math.PI * 54 * (s / total)));
+  document.title = T.running ? `${fmt(s)} · ${MODES[T.mode].label} · 雾窗` : "雾窗";
+  if (T.running && s <= 0) finishRound();
+}
+function finishRound() {
+  T.running = false;
+  const was = T.mode;
+  if (was === "focus") { T.rounds = (T.rounds || 0) + 1; T.mode = T.rounds % 4 === 0 ? "long" : "short"; }
+  else T.mode = "focus";
+  T.left = MODES[T.mode].min * 60;
+  saveT();
+  Amb.chime();
+  navigator.vibrate?.([200, 120, 200]);
+  toast(was === "focus" ? "专注结束 🍅 休息一下，看看窗外" : "休息结束，回来继续吧");
+  releaseWake();
+  refreshWindow();
+}
+
+function bindWindow() {
+  const w = winEl;
+  const wake = () => { w.classList.remove("idle"); clearTimeout(idleT); if (T.running) idleT = setTimeout(() => w.classList.add("idle"), 7000); };
+  w.onpointerdown = wake; wake();
+  setTimeout(() => $("#win-hello", w)?.classList.add("small"), 2600);
+  $("#win-close", w).onclick = () => (route().view === "open" ? history.back() : closeWindow());
+  $("#win-sound", w).onclick = () => { Amb.toggle(); refreshWindow(); };
+  $$("[data-wmode]", w).forEach((b) => (b.onclick = () => { T.mode = b.dataset.wmode; T.running = false; T.left = MODES[T.mode].min * 60; saveT(); releaseWake(); refreshWindow(); }));
+  $("#win-go", w).onclick = () => {
+    Amb.unlock();
+    if (T.running) { T.left = leftSec(); T.running = false; releaseWake(); }
+    else { if (T.left <= 0) T.left = MODES[T.mode].min * 60; T.endAt = Date.now() + T.left * 1000; T.running = true; keepAwake(); }
+    saveT(); refreshWindow();
+  };
+  $("#win-reset", w).onclick = () => { T.running = false; T.left = MODES[T.mode].min * 60; saveT(); releaseWake(); refreshWindow(); };
+  const f = $("#todo-form", w);
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const text = $("#todo-in", w).value.trim();
+    if (!text) return;
+    try { const t = await api("todos", { method: "POST", body: { text } }); (S.todos ||= []).push(t); if (!T.focus) { T.focus = t.text; saveT(); } refreshWindow(); $("#todo-in", winEl)?.focus(); }
+    catch (err) { toast(err.message); }
+  };
+  $$("[data-todo]", w).forEach((li) => {
+    const id = li.dataset.todo, t = (S.todos || []).find((x) => x.id === id);
+    $("[data-todo-done]", li).onclick = async () => {
+      const r = await api(`todos/${id}`, { method: "PATCH", body: { done: !t.done } });
+      Object.assign(t, r);
+      if (r.done && T.focus === t.text) { T.focus = ""; saveT(); }
+      if (r.done) { Amb.tick(); toast("做完一件 ✓"); }
+      S.todos.sort((a, b) => a.done - b.done || a.created_at - b.created_at);
+      refreshWindow();
+    };
+    $("[data-todo-focus]", li).onclick = () => { if (t.done) return; T.focus = T.focus === t.text ? "" : t.text; saveT(); refreshWindow(); };
+    $("[data-todo-del]", li).onclick = async () => { await api(`todos/${id}`, { method: "DELETE" }); S.todos = S.todos.filter((x) => x.id !== id); if (T.focus === t.text) { T.focus = ""; saveT(); } refreshWindow(); };
+  });
+  const clr = $("#todo-clear", w);
+  if (clr) clr.onclick = async () => { await api("todos/clear-done", { method: "POST" }); S.todos = S.todos.filter((x) => !x.done); refreshWindow(); };
+}
+
+// 专注时让屏幕保持常亮
+async function keepAwake() { try { if (!wakeLock && navigator.wakeLock) wakeLock = await navigator.wakeLock.request("screen"); } catch {} }
+function releaseWake() { try { wakeLock?.release(); } catch {} wakeLock = null; document.title = "雾窗"; }
+document.addEventListener("visibilitychange", () => { if (!document.hidden && winEl && T.running) keepAwake(); });
+
+// ---------- 声音：用程序合成的环境声（没有版权问题），跟着窗外的天气 ----------
+const Amb = (() => {
+  let ac = null, master = null, nodes = [], on = (() => { try { return localStorage.getItem("amb") === "1"; } catch { return false; } })();
+  const ensure = () => { if (!ac) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; ac = new C(); master = ac.createGain(); master.gain.value = 0; master.connect(ac.destination); } return ac; };
+  function noise(kind) {
+    const len = 2 * ac.sampleRate, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; if (kind === "brown") { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; } else d[i] = w; }
+    const src = ac.createBufferSource(); src.buffer = buf; src.loop = true; return src;
+  }
+  function build() {
+    stopNodes();
+    const w = window.Sky?.state?.().weather || "rain";
+    const out = ac.createGain(); out.gain.value = 1; out.connect(master); nodes.push(out);
+    // 雨声 / 风声
+    if (["rain", "drizzle", "storm"].includes(w)) {
+      const n = noise("white"), f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = w === "drizzle" ? 2500 : 4200;
+      const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 400;
+      const g = ac.createGain(); g.gain.value = w === "storm" ? 0.16 : w === "drizzle" ? 0.06 : 0.1;
+      n.connect(hp).connect(f).connect(g).connect(out); n.start(); nodes.push(n, f, hp, g);
+    }
+    const wind = noise("brown"), wf = ac.createBiquadFilter(); wf.type = "lowpass"; wf.frequency.value = 500;
+    const wg = ac.createGain(); wg.gain.value = 0.05; const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 0.035; lfo.connect(lg).connect(wg.gain);
+    wind.connect(wf).connect(wg).connect(out); wind.start(); lfo.start(); nodes.push(wind, wf, wg, lfo, lg);
+    // 温柔的长音铺底：四个和弦慢慢轮换
+    const chords = [[261.6, 329.6, 392, 493.9], [220, 261.6, 329.6, 392], [174.6, 220, 261.6, 329.6], [196, 246.9, 293.7, 392]];
+    const pad = ac.createGain(); pad.gain.value = 0.045; const pf = ac.createBiquadFilter(); pf.type = "lowpass"; pf.frequency.value = 900; pad.connect(pf).connect(out); nodes.push(pad, pf);
+    const oscs = chords[0].map((fq, i) => { const o = ac.createOscillator(); o.type = i % 2 ? "sine" : "triangle"; o.frequency.value = fq / 2; o.detune.value = (i - 1.5) * 4; o.connect(pad); o.start(); nodes.push(o); return o; });
+    let ci = 0;
+    const step = () => { ci = (ci + 1) % chords.length; const t = ac.currentTime; oscs.forEach((o, i) => o.frequency.setTargetAtTime(chords[ci][i] / 2, t, 2.5)); };
+    const iv = setInterval(step, 12000); nodes.push({ stop: () => clearInterval(iv), disconnect() {} });
+  }
+  function stopNodes() { nodes.forEach((n) => { try { n.stop?.(); } catch {} try { n.disconnect?.(); } catch {} }); nodes = []; }
+  function fade(to) { if (!ac) return; master.gain.cancelScheduledValues(ac.currentTime); master.gain.setTargetAtTime(to, ac.currentTime, 0.8); }
+  return {
+    get on() { return on; },
+    unlock() { if (on && ensure()) { ac.resume(); if (!nodes.length) build(); fade(1); } },
+    toggle() {
+      on = !on; try { localStorage.setItem("amb", on ? "1" : "0"); } catch {}
+      if (on) { if (!ensure()) return toast("这个浏览器不支持播放声音"); ac.resume(); build(); fade(1); }
+      else { fade(0); setTimeout(stopNodes, 2500); }
+    },
+    stop() { fade(0); setTimeout(stopNodes, 2500); },
+    chime() { // 结束时轻轻的两声钟
+      if (!ensure()) return; ac.resume();
+      [[880, 0], [1318.5, 0.35]].forEach(([f, d]) => {
+        const o = ac.createOscillator(), g = ac.createGain(); o.type = "sine"; o.frequency.value = f;
+        const t = ac.currentTime + d; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+        o.connect(g).connect(ac.destination); o.start(t); o.stop(t + 2.5);
+      });
+    },
+    tick() { if (!ac || !on) return; const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = 1568; g.gain.setValueAtTime(0.08, ac.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.3); o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + 0.32); },
+  };
+})();

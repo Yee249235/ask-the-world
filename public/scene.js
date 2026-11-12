@@ -13,7 +13,8 @@
   document.body.prepend(cv);
   const ctx = cv.getContext("2d");
   const mk = () => document.createElement("canvas");
-  const bg = mk(), plants = mk(), fog = mk(), beams = mk();
+  const bg = mk(), plants = mk(), fog = mk(), beams = mk(), land = mk();
+  const lx = land.getContext("2d");
   const bgx = bg.getContext("2d"), px = plants.getContext("2d"), fx = fog.getContext("2d"), bx = beams.getContext("2d");
 
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -26,6 +27,8 @@
 
   // ---------- 状态 ----------
   const S = { weather: "rain", time: "day", dusk: 0, season: seasonOf(new Date().getMonth(), 35), real: null };
+  // 开窗：0 = 关着（隔着玻璃），1 = 完全打开（看清窗外）
+  let openK = 0, openTarget = 0, streaks = [];
   let W = 0, H = 0, dpr = 1, raf = 0, last = 0, t0 = performance.now();
   let drops = [], runners = [], flakes = [], sprite = null, flash = 0;
 
@@ -150,6 +153,94 @@
       }
       bgx.globalAlpha = 1;
     }
+  }
+
+  // ---------- 开窗后看到的清晰风景：一层层的远山和森林 ----------
+  function ridge(g, baseY, amp, color, seed, rough) {
+    g.fillStyle = color; g.beginPath(); g.moveTo(0, H);
+    for (let x = 0; x <= W; x += 6 * dpr) {
+      const t = x / W;
+      const y = baseY - amp * (0.55 * Math.sin(t * 3.1 + seed) + 0.3 * Math.sin(t * 7.3 + seed * 2.1) + rough * 0.15 * Math.sin(t * 23 + seed * 5));
+      g.lineTo(x, y);
+    }
+    g.lineTo(W, H); g.closePath(); g.fill();
+  }
+  const TREE = {
+    spring: ["#3f6b3a", "#557d45", "#e8a9bb", "#f3c6d2"],
+    summer: ["#24502a", "#2f6331", "#3d7a3a", "#1d4424"],
+    autumn: ["#b8402a", "#d9622b", "#e8913a", "#7a4a2a", "#3e5a32"],
+    winter: ["#2f3d3a", "#3a4745", "#4a5450"],
+  };
+  function paintLand() {
+    land.width = W; land.height = H;
+    const [c0, c1, c2] = skyColors();
+    const g = lx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, c0); g.addColorStop(0.5, c1); g.addColorStop(1, c2);
+    lx.fillStyle = g; lx.fillRect(0, 0, W, H);
+    const n = isNight(), w = S.weather;
+    // 日、月、星
+    if (n && w === "clear") {
+      for (let i = 0; i < 160; i++) { lx.globalAlpha = rand(0.3, 1); lx.fillStyle = "#fff"; lx.beginPath(); lx.arc(rand(0, W), rand(0, H * 0.55), rand(0.4, 1.4) * dpr, 0, Math.PI * 2); lx.fill(); }
+      lx.globalAlpha = 1;
+      const mx = W * 0.74, my = H * 0.17, mr = 20 * dpr;
+      const mg = lx.createRadialGradient(mx, my, mr * 0.5, mx, my, mr * 6); mg.addColorStop(0, "rgba(240,236,220,0.35)"); mg.addColorStop(1, "rgba(240,236,220,0)");
+      lx.fillStyle = mg; lx.fillRect(0, 0, W, H); lx.fillStyle = "#f3efe2"; lx.beginPath(); lx.arc(mx, my, mr, 0, Math.PI * 2); lx.fill();
+    } else if (!n && (w === "clear" || w === "cloudy")) {
+      const sx = W * 0.72, sy = H * (S.time === "dusk" ? 0.42 : 0.16), sr = 26 * dpr;
+      const sg = lx.createRadialGradient(sx, sy, sr * 0.6, sx, sy, sr * 9);
+      sg.addColorStop(0, S.time === "dusk" ? "rgba(255,190,120,0.75)" : "rgba(255,248,225,0.8)"); sg.addColorStop(1, "rgba(255,255,255,0)");
+      lx.fillStyle = sg; lx.fillRect(0, 0, W, H);
+      lx.fillStyle = S.time === "dusk" ? "#ffd2a0" : "#fffaf0"; lx.beginPath(); lx.arc(sx, sy, sr, 0, Math.PI * 2); lx.fill();
+    }
+    // 云
+    if (w !== "clear" || !n) {
+      lx.filter = `blur(${Math.round(10 * dpr)}px)`;
+      const cc = w === "clear" ? 3 : w === "cloudy" ? 8 : 12;
+      for (let i = 0; i < cc; i++) {
+        lx.globalAlpha = n ? 0.15 : w === "storm" ? 0.55 : rand(0.35, 0.7);
+        lx.fillStyle = n ? "#3a4560" : w === "storm" ? "#7d8794" : "#ffffff";
+        lx.beginPath(); lx.ellipse(rand(0, W), rand(H * 0.05, H * 0.35), rand(70, 180) * dpr, rand(18, 45) * dpr, 0, 0, Math.PI * 2); lx.fill();
+      }
+      lx.filter = "none"; lx.globalAlpha = 1;
+    }
+    // 远山：越远越淡，带一点空气的颜色
+    const mtn = n ? ["#1b2540", "#16203a", "#111a30", "#0c1426"] : S.season === "winter" || w === "snow" ? ["#a9b6c6", "#8f9db0", "#76869a", "#5e6e82"] : ["#8fa3b8", "#728aa0", "#5a7287", "#435b6e"];
+    for (let i = 0; i < 4; i++) {
+      const haze = w === "fog" ? 0.75 : wet() ? 0.45 : 0.25;
+      ridge(lx, H * (0.42 + i * 0.08), H * (0.13 - i * 0.02), mix(mtn[i], c2, haze * (1 - i * 0.22)), i * 1.7 + 0.5, i);
+      if (!n && (S.season === "winter" || w === "snow") && i < 2) { // 远山顶上的雪
+        lx.save(); lx.globalCompositeOperation = "source-atop"; lx.fillStyle = "rgba(255,255,255,0.55)"; lx.fillRect(0, 0, W, H * (0.36 + i * 0.08)); lx.restore();
+      }
+    }
+    // 近处的森林
+    const pal = TREE[S.season];
+    const baseY = H * 0.82;
+    for (let x = -20 * dpr; x < W + 20 * dpr; x += rand(10, 22) * dpr) {
+      const h = rand(50, 120) * dpr, y = baseY + rand(-10, 30) * dpr;
+      let c = pick(pal); if (n) c = mix(c, "#070b16", 0.75); else if (w === "fog") c = mix(c, c2, 0.5); else if (wet()) c = mix(c, c2, 0.2);
+      lx.fillStyle = c;
+      if (S.season === "autumn" || S.season === "spring") { // 阔叶树：圆圆的树冠
+        lx.beginPath(); lx.ellipse(x, y - h * 0.55, h * 0.32, h * 0.45, 0, 0, Math.PI * 2); lx.fill();
+        lx.fillRect(x - 2 * dpr, y - h * 0.2, 4 * dpr, h * 0.2 + H);
+      } else { // 松树
+        lx.beginPath(); lx.moveTo(x, y - h); lx.lineTo(x + h * 0.28, y); lx.lineTo(x - h * 0.28, y); lx.closePath(); lx.fill();
+        if (S.season === "winter" && !n) { lx.fillStyle = "rgba(255,255,255,0.7)"; lx.beginPath(); lx.moveTo(x, y - h); lx.lineTo(x + h * 0.1, y - h * 0.65); lx.lineTo(x - h * 0.1, y - h * 0.65); lx.closePath(); lx.fill(); }
+      }
+    }
+    lx.fillStyle = n ? "#060a14" : mix(pal[0], "#1a2418", 0.5);
+    lx.fillRect(0, baseY + 20 * dpr, W, H);
+    // 雾和雨天的山间云雾
+    if (w === "fog" || wet()) {
+      const fg = lx.createLinearGradient(0, H * 0.45, 0, H * 0.85);
+      fg.addColorStop(0, "rgba(255,255,255,0)"); fg.addColorStop(0.5, n ? "rgba(120,130,160,0.18)" : `rgba(240,242,245,${w === "fog" ? 0.55 : 0.3})`); fg.addColorStop(1, "rgba(255,255,255,0)");
+      lx.fillStyle = fg; lx.fillRect(0, 0, W, H);
+    }
+  }
+  function seedStreaks() {
+    streaks = [];
+    if (!wet()) return;
+    const n = S.weather === "drizzle" ? 70 : S.weather === "storm" ? 220 : 140;
+    for (let i = 0; i < n; i++) streaks.push({ x: rand(0, W), y: rand(0, H), l: rand(10, 24) * dpr, v: rand(12, 20) * dpr });
   }
 
   // ---------- 窗外的植物（跟着季节换） ----------
@@ -307,11 +398,24 @@
       if (f.y > H + 20 * dpr || f.y < -30 * dpr || f.x < -30 * dpr || f.x > W + 30 * dpr) Object.assign(f, newFlake(f.kind, false), f.kind === "mote" ? {} : { x: rand(-W * 0.2, W) });
     }
     if (flash > 0) flash = Math.max(0, flash - dt / 260);
+    if (openK > 0) for (const r of streaks) { r.y += r.v * dt / 16; r.x -= r.v * 0.15 * dt / 16; if (r.y > H) { r.y = -r.l; r.x = rand(0, W * 1.1); } }
   }
 
   function draw(now) {
+    // 开窗/关窗的过渡
+    if (openK !== openTarget) { openK += (openTarget - openK) * 0.08; if (Math.abs(openTarget - openK) < 0.01) openK = openTarget; }
     ctx.globalAlpha = 1;
     ctx.drawImage(bg, 0, 0);
+    if (openK > 0) {
+      ctx.globalAlpha = openK; ctx.drawImage(land, 0, 0);
+      // 打开的窗外，雨是一条条落下的雨丝
+      if (streaks.length) {
+        ctx.strokeStyle = isNight() ? "rgba(200,210,240,0.35)" : "rgba(255,255,255,0.55)"; ctx.lineWidth = 1 * dpr; ctx.beginPath();
+        for (const r of streaks) { ctx.moveTo(r.x, r.y); ctx.lineTo(r.x - r.l * 0.15, r.y + r.l); }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
     // 植物轻轻摇晃
     const sway = reduce ? 0 : Math.sin((now - t0) / 2600) * 4 * dpr;
     ctx.drawImage(plants, sway, sway * 0.3);
@@ -331,9 +435,14 @@
     ctx.globalAlpha = 1;
     // 光束（慢慢地明暗变化）
     if (S.weather === "clear" && !isNight()) { ctx.globalAlpha = 0.75 + Math.sin((now - t0) / 4000) * 0.25; ctx.drawImage(beams, 0, 0); ctx.globalAlpha = 1; }
-    ctx.drawImage(fog, 0, 0);
-    for (const d of drops) ctx.drawImage(sprite, d.x - d.r, d.y - d.r, d.r * 2, d.r * 2.1);
-    for (const r of runners) ctx.drawImage(sprite, r.x - r.r, r.y - r.r * 1.15, r.r * 2, r.r * 2.4);
+    // 玻璃（雾、水珠）在开窗时慢慢消失
+    ctx.globalAlpha = 1 - openK;
+    if (openK < 1) {
+      ctx.drawImage(fog, 0, 0);
+      for (const d of drops) ctx.drawImage(sprite, d.x - d.r, d.y - d.r, d.r * 2, d.r * 2.1);
+      for (const r of runners) ctx.drawImage(sprite, r.x - r.r, r.y - r.r * 1.15, r.r * 2, r.r * 2.4);
+    }
+    ctx.globalAlpha = 1;
     if (flash > 0) { ctx.fillStyle = `rgba(235,240,255,${flash * 0.35})`; ctx.fillRect(0, 0, W, H); }
   }
 
@@ -359,7 +468,7 @@
     root.dataset.weather = S.weather;
     root.dataset.season = S.season;
     sprite = makeSprite();
-    paintScene(); paintPlants(); paintBeams(); paintFog(); seedGlass(); seedFlakes();
+    paintScene(); paintPlants(); paintBeams(); paintFog(); paintLand(); seedGlass(); seedFlakes(); seedStreaks();
     start();
     const meta = document.querySelector('meta[name="theme-color"]:not([media])') || (() => { const m = document.createElement("meta"); m.name = "theme-color"; document.head.appendChild(m); return m; })();
     meta.content = skyColors()[0];
@@ -383,6 +492,7 @@
     setPreview(p) { try { localStorage.setItem(PREVIEW_KEY, JSON.stringify(p)); } catch {} apply(); },
     preview,
     state: () => ({ ...S }),
+    setOpen(v) { openTarget = v ? 1 : 0; if (reduce) { openK = openTarget; draw(performance.now()); } },
   };
 
   let rt;

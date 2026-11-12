@@ -64,18 +64,20 @@ async function usageToday(db, request) {
 
 async function getState(db, env, request) {
   await ensureSeed(db);
-  const [c, t, q, l, s] = await Promise.all([
+  const [c, t, q, l, s, td] = await Promise.all([
     db.prepare("SELECT * FROM categories ORDER BY sort, created_at").all(),
     db.prepare("SELECT * FROM topics ORDER BY created_at DESC").all(),
     db.prepare("SELECT * FROM questions ORDER BY created_at DESC").all(),
     db.prepare("SELECT * FROM links").all(),
     getSettings(db),
+    db.prepare("SELECT * FROM todos ORDER BY done, created_at").all().catch(() => ({ results: [] })),
   ]);
   return {
     categories: c.results,
     topics: t.results,
     questions: q.results.map(parseQ),
     links: l.results,
+    todos: td.results.map((x) => ({ ...x, done: !!x.done })),
     settings: s,
     providers: activeProviders(env, "answer").map((p) => `${p.label} · ${p.model.replace(/:free$/, "")}`),
     usage: await usageToday(db, request),
@@ -467,6 +469,32 @@ export async function onRequest({ request, env, params }) {
         db.prepare(`UPDATE questions SET ${col}=NULL WHERE ${col}=?`).bind(id),
         db.prepare(`DELETE FROM ${table} WHERE id=?`).bind(id),
       ]);
+      return json({ ok: true });
+    }
+  }
+
+  // 待办
+  if (seg[0] === "todos") {
+    const id = seg[1];
+    if (!id && m === "POST") {
+      const text = String(body.text || "").trim().slice(0, 200);
+      if (!text) return json({ error: "待办不能为空" }, 400);
+      const row = { id: newId("d_"), text, done: 0, question_id: body.question_id || null, created_at: now() };
+      await db.prepare("INSERT INTO todos (id,text,done,question_id,created_at) VALUES (?,?,?,?,?)").bind(row.id, row.text, 0, row.question_id, row.created_at).run();
+      return json({ ...row, done: false });
+    }
+    if (id === "clear-done" && m === "POST") {
+      await db.prepare("DELETE FROM todos WHERE done=1").run();
+      return json({ ok: true });
+    }
+    if (id && m === "PATCH") {
+      if ("done" in body) await db.prepare("UPDATE todos SET done=?, done_at=? WHERE id=?").bind(body.done ? 1 : 0, body.done ? now() : null, id).run();
+      if ("text" in body) await db.prepare("UPDATE todos SET text=? WHERE id=?").bind(String(body.text).slice(0, 200), id).run();
+      const r = await db.prepare("SELECT * FROM todos WHERE id=?").bind(id).first();
+      return json({ ...r, done: !!r?.done });
+    }
+    if (id && m === "DELETE") {
+      await db.prepare("DELETE FROM todos WHERE id=?").bind(id).run();
       return json({ ok: true });
     }
   }
