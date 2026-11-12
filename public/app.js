@@ -82,6 +82,56 @@ async function deleteQuestions(ids, withFollowups) {
   return r;
 }
 
+// ---------- 长按换分类 ----------
+function openMoveSheet(id) {
+  const q = qOf(id);
+  if (!q) return;
+  const kids = descendants(id).length;
+  const bg = document.createElement("div");
+  bg.className = "sheet-bg";
+  bg.innerHTML = `<div class="sheet move-sheet" role="dialog" aria-label="换分类">
+    <div class="sheet-head"><b>移到哪个分类？</b><button class="btn small ghost" data-mv="x">取消</button></div>
+    <p class="mv-q">${esc(q.text)}</p>
+    ${kids ? `<p class="muted" style="font-size:13px;margin:0 0 10px">它下面的 ${kids} 个追问会一起移过去</p>` : ""}
+    <div class="mv-grid">
+      ${S.categories.map((c) => `<button class="mv ${c.id === q.category_id ? "on" : ""}" data-mv="${c.id}"><span>${c.emoji}</span>${esc(c.name)}</button>`).join("")}
+      <button class="mv ${!q.category_id ? "on" : ""}" data-mv=""><span>📥</span>未分类</button>
+    </div>
+  </div>`;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.onclick = async (e) => {
+    if (e.target === bg) return close();
+    const b = e.target.closest("[data-mv]");
+    if (!b) return;
+    if (b.dataset.mv === "x") return close();
+    const cat = b.dataset.mv || null;
+    try {
+      const r = await api("questions/move", { method: "POST", body: { id, category_id: cat } });
+      r.moved.forEach((qid) => { const x = qOf(qid); if (x) x.category_id = cat; });
+      const c = catOf(cat);
+      toast(`已移到 ${c ? c.emoji + " " + c.name : "📥 未分类"}${r.moved.length > 1 ? `（共 ${r.moved.length} 个）` : ""}`);
+    } catch (err) { toast(err.message); }
+    close();
+    keepScroll(render);
+  };
+}
+
+// 长按（手机）或右键（电脑）一张卡片
+function bindLongPress(el, fn) {
+  let timer = null, sx = 0, sy = 0;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button && e.button !== 0) return;
+    sx = e.clientX; sy = e.clientY;
+    timer = setTimeout(() => { timer = null; el.dataset.longpressed = "1"; navigator.vibrate?.(15); fn(); }, 500);
+  });
+  el.addEventListener("pointermove", (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
+  el.addEventListener("pointerup", cancel);
+  el.addEventListener("pointercancel", cancel);
+  el.addEventListener("contextmenu", (e) => { e.preventDefault(); cancel(); fn(); });
+}
+
 // ---------- 路由 ----------
 function route() {
   const h = location.hash.replace(/^#\/?/, "");
@@ -1033,7 +1083,11 @@ function bindCommon() {
     f.onsubmit = (e) => { e.preventDefault(); submitCapture(f); };
     f.text.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitCapture(f); };
   });
+  $$("[data-open]").forEach((el) => {
+    if (!UI.selecting) bindLongPress(el, () => openMoveSheet(el.dataset.open));
+  });
   $$("[data-open]").forEach((el) => (el.onclick = (e) => {
+    if (el.dataset.longpressed) { delete el.dataset.longpressed; return; } // 长按后松手不算点击
     if (e.target.closest("button")) return;
     if (UI.selecting) { const id = el.dataset.open; UI.sel.has(id) ? UI.sel.delete(id) : UI.sel.add(id); keepScroll(render); return; }
     openQ(el.dataset.open);

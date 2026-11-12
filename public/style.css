@@ -343,3 +343,12 @@ a.stat.link span { color: var(--muted); }
 }
 .card.picked { border-color: var(--danger); }
 .card.picked .tick { background: var(--danger); border-color: var(--danger); }
+
+/* 长按换分类 */
+.card { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.move-sheet { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+.mv-q { margin: 0 0 10px; font-weight: 500; }
+.mv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.mv { display: flex; align-items: center; gap: 8px; text-align: left; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; font-size: 15px; }
+.mv span { font-size: 20px; }
+.mv.on { border-color: var(--brass); background: var(--brass-soft); }

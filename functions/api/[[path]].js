@@ -280,6 +280,19 @@ export async function onRequest({ request, env, params }) {
       ).bind(q.id, q.text, q.context, q.category_id, q.topic_id, q.parent_id, q.ask_by, t, t).run();
       return json(await getQ(db, q.id));
     }
+    // 换分类：{ id, category_id }，它下面所有追问一起换
+    if (id === "move" && m === "POST") {
+      const { results: all } = await db.prepare("SELECT id, parent_id FROM questions").all();
+      const ids = new Set([String(body.id)]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const r of all) if (!ids.has(r.id) && r.parent_id && ids.has(r.parent_id)) { ids.add(r.id); grew = true; }
+      }
+      const t = now();
+      await db.batch([...ids].map((qid) => db.prepare("UPDATE questions SET category_id=?, updated_at=? WHERE id=?").bind(body.category_id || null, t, qid)));
+      return json({ ok: true, moved: [...ids] });
+    }
     // 批量删除：{ ids: [...], withFollowups: true/false }
     if (id === "delete" && m === "POST") {
       const ids = new Set((body.ids || []).map(String));
