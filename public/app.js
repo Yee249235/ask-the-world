@@ -73,6 +73,13 @@ function copyQuestion(q) {
   copyText(text);
 }
 
+// 答案里出现的网址，在框下面列成可以点的链接
+function linksIn(text) {
+  const urls = [...new Set(String(text || "").match(/https?:\/\/[^\s<>"'）)]+/g) || [])].slice(0, 8);
+  if (!urls.length) return "";
+  return `<div class="ans-links">${urls.map((u) => { let h = u; try { h = new URL(u).hostname.replace(/^www\./, ""); } catch {} return `<a href="${esc(u)}" target="_blank" rel="noopener">🔗 ${esc(h)}</a>`; }).join("")}</div>`;
+}
+
 // ---------- 删除 ----------
 function descendants(id) {
   const out = [];
@@ -562,6 +569,11 @@ function viewSettings() {
     ${hasAI() ? `<p>按顺序尝试，前一个失败会自动换下一个：</p><ul>${S.providers.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>`
       : `<p>还没有配置 AI 接口。在 Cloudflare 的环境变量里加上 <code>GROQ_API_KEY</code> 等就能启用（见 README）。没有 AI 也可以正常记录，只是不能自动解答。</p>`}
   </div>
+  <div class="panel">
+    <h3>🌐 联网回答</h3>
+    ${S.search ? `<p>已开启。问题旁边会多一个「🌐 联网回答」，先上网搜最新资料再回答，并附上来源链接。适合新闻、热点、现任人物、价格这类会变的事。</p>`
+      : `<p>还没开启。站内 AI 的知识有截止时间，不知道最近发生的事。在 Cloudflare 的环境变量里加上 <code>TAVILY_API_KEY</code>（免费，每月 1000 次）就能联网。</p>`}
+  </div>
   <form class="panel" id="tpl-form">
     <h3>📝 回答模板（你的 skill）</h3>
     <p>站内 AI 回答时会照着这个来；「复制」问题时也可以带上它，贴到别的 AI 里得到同样风格的回答。</p>
@@ -618,10 +630,12 @@ function sheetHTML(q) {
     <div class="field">
       <div class="bar space"><span class="label" style="margin:0">答案</span>
         <span class="bar">
-          ${hasAI() ? `<button class="btn small brass" id="sh-ai" ${busy.answer ? "disabled" : ""}>${busy.answer ? `<span class="spin">✨</span> 思考中…` : "✨ 站内 AI 回答"}</button>` : ""}
+          ${hasAI() ? `<button class="btn small brass" id="sh-ai" ${busy.answer ? "disabled" : ""}>${busy.answer === "local" ? `<span class="spin">✨</span> 思考中…` : "✨ 站内 AI"}</button>` : ""}
+          ${hasAI() && S.search ? `<button class="btn small teal" id="sh-web" ${busy.answer ? "disabled" : ""} title="先上网搜索最新资料再回答，适合新闻、热点、现任人物、价格">${busy.answer === "web" ? `<span class="spin">🌐</span> 搜索中…` : "🌐 联网回答"}</button>` : ""}
           <button class="btn small" id="sh-paste">📥 贴进来</button>
         </span></div>
       <textarea class="textarea" id="sh-ans" placeholder="写下答案，或者贴进来" style="margin-top:8px">${esc(q.answer)}</textarea>
+      ${linksIn(q.answer)}
       <div class="src" id="sh-src">
         ${q.source === "site_ai" ? `<span class="chip on">${SRC.site_ai}</span><span>${esc(q.source_model || "")}</span>` : `
           <span>来源：</span>
@@ -757,14 +771,16 @@ function bindSheet(id) {
   const ver = $("#sh-ver", sh);
   if (ver) ver.onchange = () => patchQ(id, { verified: ver.checked });
 
-  const aiBtn = $("#sh-ai", sh);
-  if (aiBtn) aiBtn.onclick = async () => {
-    if (q().answer && aiBtn.dataset.sure !== "1") { aiBtn.dataset.sure = "1"; aiBtn.textContent = "会覆盖现在的答案，再点一次"; return; }
-    UI.busy[id] = { ...UI.busy[id], answer: true }; refreshSheet(id);
-    try { upsertQ(await api("ai/answer", { method: "POST", body: { id } })); }
-    catch (e) { toast(e.message.slice(0, 80)); }
+  const ask = (btn, online) => async () => {
+    if (q().answer && btn.dataset.sure !== "1") { btn.dataset.sure = "1"; btn.textContent = "会覆盖现在的答案，再点一次"; return; }
+    UI.busy[id] = { ...UI.busy[id], answer: online ? "web" : "local" }; refreshSheet(id);
+    try { upsertQ(await api("ai/answer", { method: "POST", body: { id, online } })); }
+    catch (e) { toast(e.message.slice(0, 90)); }
     UI.busy[id] = { ...UI.busy[id], answer: false }; refreshSheet(id);
   };
+  const aiBtn = $("#sh-ai", sh), webBtn = $("#sh-web", sh);
+  if (aiBtn) aiBtn.onclick = ask(aiBtn, false);
+  if (webBtn) webBtn.onclick = ask(webBtn, true);
 
   const ff = $("#sh-follow", sh);
   ff.onsubmit = async (e) => {

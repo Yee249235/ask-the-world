@@ -39,6 +39,7 @@
 | `CLOUDFLARE_API_TOKEN` | 第 1 步的 API Token |
 | `ACCESS_PASSWORD` | 进入网站的密码，自己定 |
 | `GROQ_API_KEY` | 第 2 步的 Groq Key（可选） |
+| `TAVILY_API_KEY` | 可选，开启联网回答（[app.tavily.com](https://app.tavily.com) 免费申请） |
 | `OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY` | 可选，备用 AI |
 
 ### 4. 运行部署
