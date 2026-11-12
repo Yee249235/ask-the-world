@@ -1,0 +1,14 @@
+{
+  "name": "ask-the-world",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev",
+    "db:local": "wrangler d1 migrations apply ask-the-world --local",
+    "db:remote": "wrangler d1 migrations apply ask-the-world --remote",
+    "deploy": "wrangler pages deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,10 @@
+name = "ask-the-world"
+compatibility_date = "2026-06-01"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ask-the-world"
+# 在 Cloudflare 创建 D1 数据库后，把它的 ID 填到这里（见 README）
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
