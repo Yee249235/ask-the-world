@@ -255,7 +255,7 @@ async function classify(id) {
 }
 
 // ---------- 卡片 ----------
-function card(q) {
+function card(q, { deck = 0, open = false } = {}) {
   const c = catOf(q.category_id), t = topicOf(q.topic_id), p = qOf(q.parent_id);
   const kids = childrenOf(q.id).length;
   return `
@@ -270,11 +270,31 @@ function card(q) {
     ${q.answer ? `<p class="ans">${esc(q.answer)}</p>` : `<p class="ans none">🌱 还没有答案</p>`}
     <div class="foot">
       ${p ? `<span>↖ 追问自「${esc(p.text.slice(0, 18))}${p.text.length > 18 ? "…" : ""}」</span>` : ""}
-      ${kids ? `<span>↳ ${kids} 个追问</span>` : ""}
+      ${deck ? "" : kids ? `<span>↳ ${kids} 个追问</span>` : ""}
       ${q.answer && q.source ? `<span>${SRC[q.source]}${q.verified ? " · ✅" : ""}</span>` : ""}
     </div>
     ${suggestBar(q)}
+    ${deck ? `<button class="deck-toggle" data-deck="${q.id}" aria-expanded="${open}">🌿 ${deck} 个追问 <span class="chev">${open ? "收起 ▴" : "展开 ▾"}</span></button>` : ""}
   </article>`;
+}
+
+// 一叠卡片：最上面是原始问题，后面叠着它的追问；点「追问」那一条展开/收起
+function stack(q, shown) {
+  const flat = [];
+  const walk = (pid, depth) => childrenOf(pid).forEach((k) => { if (shown.has(k.id)) { flat.push({ k, depth }); walk(k.id, depth + 1); } });
+  walk(q.id, 0);
+  if (!flat.length || UI.selecting) return card(q);
+  const open = UI.decks?.has(q.id);
+  const layers = Math.min(flat.length, 2);
+  return `<div class="stack layers-${layers} ${open ? "open" : ""}">
+    ${card(q, { deck: flat.length, open })}
+    ${open ? `<div class="deck">${flat.map(({ k, depth }, i) => `
+      <article class="fcard ${k.answer ? "" : "unanswered"}" data-open="${k.id}" style="--d:${Math.min(depth, 3)};--i:${i}">
+        <span class="fmark">${depth ? "↳".repeat(1) : "🌿"}</span>
+        <span class="ftext">${esc(k.text)}${k.ask_by === "ai" ? ` <span class="badge-ai">AI</span>` : ""}</span>
+        <span class="fstate">${k.answer ? "💡" : "🌱"}</span>
+      </article>`).join("")}</div>` : ""}
+  </div>`;
 }
 
 function suggestBar(q) {
@@ -340,11 +360,14 @@ function viewHome() {
   } else if (!qs.length) {
     body = `<div class="empty"><span class="big">🧭</span>这里还没有问题</div>`;
   } else {
+    // 追问叠在它的原始问题后面，时间线上只放「最上层」的问题
+    const shown = new Set(qs.map((q) => q.id));
+    const roots = qs.filter((q) => !q.parent_id || !shown.has(q.parent_id));
     const groups = {};
-    for (const q of qs) (groups[ymd(q.created_at)] ||= []).push(q);
+    for (const q of roots) (groups[ymd(q.created_at)] ||= []).push(q);
     body = Object.values(groups).map((g) => {
       const [a, b] = dayLabel(g[0].created_at);
-      return `<div class="day"><h2>${a}</h2><span>${b} · ${g.length} 个问题</span></div><div class="list">${g.map(card).join("")}</div>`;
+      return `<div class="day"><h2>${a}</h2><span>${b} · ${g.length} 个问题</span></div><div class="list">${g.map((q) => stack(q, shown)).join("")}</div>`;
     }).join("");
   }
   return `
@@ -1083,6 +1106,12 @@ function bindCommon() {
     f.onsubmit = (e) => { e.preventDefault(); submitCapture(f); };
     f.text.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitCapture(f); };
   });
+  $$("[data-deck]").forEach((b) => (b.onclick = (e) => {
+    e.stopPropagation();
+    UI.decks ||= new Set();
+    UI.decks.has(b.dataset.deck) ? UI.decks.delete(b.dataset.deck) : UI.decks.add(b.dataset.deck);
+    keepScroll(render);
+  }));
   $$("[data-open]").forEach((el) => {
     if (!UI.selecting) bindLongPress(el, () => openMoveSheet(el.dataset.open));
   });
